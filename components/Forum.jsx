@@ -172,11 +172,16 @@ export default function Forum() {
     setVotes((prev) => ({ ...prev, [postId]: next || undefined }));
 
     if (next === null) {
-      await supabase.from("votes").delete().eq("post_id", postId).eq("user_id", me.id);
+      const { error } = await supabase.from("votes").delete().eq("post_id", postId).eq("user_id", me.id);
+      if (error) console.error("vote remove failed:", error.message);
     } else {
-      await supabase
+      const { error } = await supabase
         .from("votes")
-        .upsert({ post_id: postId, user_id: me.id, value: next === "up" ? 1 : -1 });
+        .upsert(
+          { post_id: postId, user_id: me.id, value: next === "up" ? 1 : -1 },
+          { onConflict: "post_id,user_id" }
+        );
+      if (error) console.error("vote save failed:", error.message);
     }
   };
 
