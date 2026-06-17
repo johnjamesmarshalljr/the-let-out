@@ -1,15 +1,28 @@
 -- ============================================================
 --  the Let Out — database schema
---  Run this once in the Supabase SQL Editor (paste the whole file, click Run).
---  Safe to re-run: it drops and recreates the views/policies it owns.
+--  Run this in the Supabase SQL Editor (paste all, click Run).
+--  Safe to run on a fresh project OR an existing one — it only
+--  adds what's missing and recreates the views/policies it owns.
 -- ============================================================
 
 -- ---------- PROFILES ----------
 create table if not exists public.profiles (
   id         uuid primary key references auth.users on delete cascade,
-  username   text not null,
+  username   text,
   created_at timestamptz not null default now()
 );
+
+-- new identity columns (added in-place so existing projects upgrade cleanly)
+alter table public.profiles add column if not exists house        text;
+alter table public.profiles add column if not exists scene        text;
+alter table public.profiles add column if not exists avatar_url   text;
+alter table public.profiles add column if not exists avatar_color text;
+alter table public.profiles add column if not exists bio          text;
+alter table public.profiles add column if not exists onboarded    boolean not null default false;
+
+-- usernames are unique, case-insensitive (only once chosen)
+create unique index if not exists profiles_username_lower
+  on public.profiles (lower(username)) where username is not null;
 
 -- ---------- POSTS ----------
 create table if not exists public.posts (
@@ -30,7 +43,7 @@ create table if not exists public.comments (
   created_at timestamptz not null default now()
 );
 
--- ---------- VOTES (one row per user per post: 1 = upvote, -1 = chop) ----------
+-- ---------- VOTES (1 = upvote, -1 = chop) ----------
 create table if not exists public.votes (
   post_id uuid not null references public.posts(id) on delete cascade,
   user_id uuid not null references public.profiles(id) on delete cascade,
@@ -39,7 +52,7 @@ create table if not exists public.votes (
 );
 
 -- ============================================================
---  AUTO-CREATE A PROFILE WHEN SOMEONE SIGNS UP
+--  CREATE A BLANK PROFILE ON SIGNUP (they fill it in during onboarding)
 -- ============================================================
 create or replace function public.handle_new_user()
 returns trigger
@@ -48,15 +61,8 @@ security definer
 set search_path = public
 as $$
 begin
-  insert into public.profiles (id, username)
-  values (
-    new.id,
-    coalesce(
-      new.raw_user_meta_data ->> 'full_name',
-      new.raw_user_meta_data ->> 'name',
-      split_part(new.email, '@', 1)
-    )
-  )
+  insert into public.profiles (id, onboarded)
+  values (new.id, false)
   on conflict (id) do nothing;
   return new;
 end;
@@ -69,15 +75,12 @@ create trigger on_auth_user_created
 
 -- ============================================================
 --  ROW LEVEL SECURITY
---  Everyone can read (it's a community forum). Only signed-in
---  users can write, and only as themselves.
 -- ============================================================
 alter table public.profiles enable row level security;
 alter table public.posts    enable row level security;
 alter table public.comments enable row level security;
 alter table public.votes    enable row level security;
 
--- profiles
 drop policy if exists "profiles read"   on public.profiles;
 drop policy if exists "profiles insert" on public.profiles;
 drop policy if exists "profiles update" on public.profiles;
@@ -85,7 +88,6 @@ create policy "profiles read"   on public.profiles for select using (true);
 create policy "profiles insert" on public.profiles for insert to authenticated with check (auth.uid() = id);
 create policy "profiles update" on public.profiles for update to authenticated using (auth.uid() = id);
 
--- posts
 drop policy if exists "posts read"   on public.posts;
 drop policy if exists "posts insert" on public.posts;
 drop policy if exists "posts delete" on public.posts;
@@ -93,7 +95,6 @@ create policy "posts read"   on public.posts for select using (true);
 create policy "posts insert" on public.posts for insert to authenticated with check (auth.uid() = author_id);
 create policy "posts delete" on public.posts for delete to authenticated using (auth.uid() = author_id);
 
--- comments
 drop policy if exists "comments read"   on public.comments;
 drop policy if exists "comments insert" on public.comments;
 drop policy if exists "comments delete" on public.comments;
@@ -101,18 +102,37 @@ create policy "comments read"   on public.comments for select using (true);
 create policy "comments insert" on public.comments for insert to authenticated with check (auth.uid() = author_id);
 create policy "comments delete" on public.comments for delete to authenticated using (auth.uid() = author_id);
 
--- votes
 drop policy if exists "votes read"   on public.votes;
 drop policy if exists "votes write"  on public.votes;
 drop policy if exists "votes update" on public.votes;
 drop policy if exists "votes delete" on public.votes;
 create policy "votes read"   on public.votes for select using (true);
 create policy "votes write"  on public.votes for insert to authenticated with check (auth.uid() = user_id);
-create policy "votes update" on public.votes for update to authenticated using (auth.uid() = user_id);
+create policy "votes update" on public.votes for update to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "votes delete" on public.votes for delete to authenticated using (auth.uid() = user_id);
 
 -- ============================================================
---  FEED VIEWS (read-only convenience views for the app)
+--  TABLE GRANTS (role-level access; RLS still decides which rows)
+-- ============================================================
+grant select on public.posts, public.comments, public.votes, public.profiles to anon, authenticated;
+grant insert, update, delete on public.posts, public.comments, public.votes, public.profiles to authenticated;
+
+-- ============================================================
+--  AVATAR STORAGE (public bucket for profile photos)
+-- ============================================================
+insert into storage.buckets (id, name, public)
+values ('avatars', 'avatars', true)
+on conflict (id) do nothing;
+
+drop policy if exists "avatars read"   on storage.objects;
+drop policy if exists "avatars insert" on storage.objects;
+drop policy if exists "avatars update" on storage.objects;
+create policy "avatars read"   on storage.objects for select using (bucket_id = 'avatars');
+create policy "avatars insert" on storage.objects for insert to authenticated with check (bucket_id = 'avatars');
+create policy "avatars update" on storage.objects for update to authenticated using (bucket_id = 'avatars');
+
+-- ============================================================
+--  FEED VIEWS (carry author identity for bylines)
 -- ============================================================
 drop view if exists public.post_feed;
 create view public.post_feed as
@@ -123,7 +143,10 @@ select
   p.body,
   p.created_at,
   p.author_id,
-  pr.username as author,
+  pr.username     as author,
+  pr.house        as author_house,
+  pr.avatar_url   as author_avatar,
+  pr.avatar_color as author_color,
   coalesce((select sum(v.value) from public.votes v where v.post_id = p.id), 0) as score,
   (select count(*) from public.comments c where c.post_id = p.id)              as comment_count
 from public.posts p
@@ -137,7 +160,10 @@ select
   c.body,
   c.created_at,
   c.author_id,
-  pr.username as author
+  pr.username     as author,
+  pr.house        as author_house,
+  pr.avatar_url   as author_avatar,
+  pr.avatar_color as author_color
 from public.comments c
 join public.profiles pr on pr.id = c.author_id;
 
@@ -145,5 +171,5 @@ grant select on public.post_feed    to anon, authenticated;
 grant select on public.comment_feed to anon, authenticated;
 
 -- ============================================================
---  Done. Your tables, security rules, and feed are ready.
+--  Done.
 -- ============================================================
