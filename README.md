@@ -10,7 +10,7 @@ Stack: **Next.js** (front end) + **Supabase** (database + login) + **Vercel** (h
 
 1. A free Supabase project — this is your database and login system.
 2. This app deployed on Vercel — the website itself.
-3. Login: **email sign-in links work immediately with zero extra setup.** Google takes ~10 extra minutes. Facebook is documented at the bottom for later — it needs a Meta developer app, so don't block your launch on it.
+3. Login, three ways: **name-only profiles** (no email — one Supabase toggle, see Step 3), **email** sign-in links (on by default), and **Google** (~10 extra min). (Facebook was intentionally dropped — see the note near the bottom.)
 
 You do not need to be a backend developer. Follow the steps in order.
 
@@ -28,15 +28,22 @@ You do not need to be a backend developer. Follow the steps in order.
 
 1. In Supabase, open the **SQL Editor** (left sidebar).
 2. Open the file `supabase/schema.sql` from this project, copy the whole thing, paste it into the editor.
-3. Click **Run**. You should see "Success." This creates your posts, comments, votes, and profiles tables, plus the security rules. You only do this once.
+3. Click **Run**. You should see "Success." This creates your posts, comments, votes, and profiles tables, the security rules, and a public `avatars` storage bucket for profile photos.
 
-## Step 3 — Turn on email login
+The schema is safe to **re-run** at any time — it only adds what's missing and recreates the parts it owns. If you're upgrading an existing project, just paste and run it again; it adds the new profile fields and the avatars bucket without touching your data.
 
-1. In Supabase go to **Authentication → Providers**.
-2. **Email** is on by default — that's all you need to launch. (It sends a one-tap sign-in link, no passwords.)
-3. Go to **Authentication → URL Configuration** and set:
-   - **Site URL**: `http://localhost:3000` for now (you'll change this to your real Vercel URL after Step 6).
+> Note: after upgrading, everyone (including you) is asked to set up their profile — pick a username, optional house/scene/photo — the next time they sign in. That's expected; it's how the new identity system replaces the raw name from your login.
+
+## Step 3 — Turn on login methods
+
+1. In Supabase go to **Authentication → Providers** (or **Sign In / Providers**).
+2. **Email** is on by default — that alone is enough to launch.
+3. **Turn on Anonymous sign-ins.** This is what powers the "Create a profile" button (name-only accounts, no email). Find the **Anonymous** provider/toggle and enable it. Without this, that button errors.
+4. Go to **Authentication → URL Configuration** and set:
+   - **Site URL**: `http://localhost:3000` for now (change to your Vercel URL after Step 6).
    - Under **Redirect URLs**, add `http://localhost:3000` and (later) your Vercel URL.
+
+> Heads up on name-only profiles: an anonymous account lives in that browser's storage. If someone clears their browser or switches devices, that profile is gone and can't be recovered — there's no email or Google attached to prove it's theirs. That's the tradeoff for zero-friction signup. People who want a durable account can sign in with Google or email instead.
 
 ## Step 4 — Run it on your own computer first
 
@@ -103,13 +110,11 @@ That's it. Share the link with the community.
 3. Copy the Google **Client ID** and **Client Secret** into that Supabase Google provider screen, and enable it.
 4. The "Continue with Google" button in the app starts working immediately — no code change.
 
-## Adding Facebook login (button is already in the app)
+## Facebook login (intentionally removed)
 
-The "Continue with Facebook" button is already built into the sign-in screen. It stays inert until you enable the Facebook provider in Supabase, so there's no code change to make — just this configuration when you're ready:
+The Facebook button was removed. Meta now gates public Facebook login behind business verification, which requires a legally registered business and a business-domain email — too much overhead for a community forum, and ironic for a project whose whole point is moving off Facebook. Google + email cover everyone without it.
 
-Facebook login needs a Meta developer app with a privacy policy URL and app domain, and Meta will push you toward business verification along the way. It's the slowest of the three providers to set up, so launch on email + Google first.
-
-When ready: create an app at https://developers.facebook.com, add the **Facebook Login** product, copy the **App ID** and **App Secret** into Supabase → **Authentication → Providers → Facebook**, and enable it. In your Meta app's Facebook Login settings, add the Supabase callback URL (shown on that same Supabase Facebook provider screen, like `https://abcd1234.supabase.co/auth/v1/callback`) under Valid OAuth Redirect URIs. Once the provider is enabled in Supabase, the button starts working — no code change needed.
+If you ever incorporate the project and decide it's worth it, you'd: complete Meta business verification, enable the Facebook provider in Supabase (App ID / Secret + the Supabase callback URL), and re-add a "Continue with Facebook" button mirroring the Google one in `components/Forum.jsx` (the handler pattern is `signInWithOAuth({ provider: "facebook" })`).
 
 ---
 
@@ -119,6 +124,8 @@ When ready: create an app at https://developers.facebook.com, add the **Facebook
 - **Rename the site**: search `THE LET OUT` in `components/Forum.jsx` and `app/layout.js`.
 - **Colors**: the `C` object at the top of `components/Forum.jsx`.
 
-## What's deliberately not here yet (POC scope)
+## What's built / what's next
 
-Photos/video, direct messages, moderation tools, notifications, search. All are reasonable next steps once the core proves out — each is a separate, bigger build.
+Built in: profiles (username, house, scene, avatar), photo/video on posts, threaded comments with voting, and the **House model** — houses with founder/parent/child roles, join requests with leader approval, remove/promote, and a members-only private board. Re-run `supabase/schema.sql` after pulling this version to add the house tables.
+
+Next up: the **ball organizer** (create a ball, build an ordered category lineup, publish it), then live entries/scoring as a later phase. Still not here: direct messages, notifications, search.

@@ -17,6 +17,8 @@ alter table public.profiles add column if not exists avatar_url   text;
 alter table public.profiles add column if not exists avatar_color text;
 alter table public.profiles add column if not exists bio          text;
 alter table public.profiles add column if not exists onboarded    boolean not null default false;
+-- anonymous users have no name at signup, so username must be nullable
+alter table public.profiles alter column username drop not null;
 create unique index if not exists profiles_username_lower
   on public.profiles (lower(username)) where username is not null;
 
@@ -64,8 +66,12 @@ create table if not exists public.comment_votes (
 create or replace function public.handle_new_user()
 returns trigger language plpgsql security definer set search_path = public as $$
 begin
-  insert into public.profiles (id, onboarded) values (new.id, false)
-  on conflict (id) do nothing;
+  begin
+    insert into public.profiles (id, onboarded) values (new.id, false)
+    on conflict (id) do nothing;
+  exception when others then
+    null;  -- never block account creation if the profile insert hiccups
+  end;
   return new;
 end; $$;
 drop trigger if exists on_auth_user_created on auth.users;
@@ -171,6 +177,95 @@ join public.profiles pr on pr.id = c.author_id;
 
 grant select on public.post_feed    to anon, authenticated;
 grant select on public.comment_feed to anon, authenticated;
+
+-- ============================================================
+--  HOUSES
+-- ============================================================
+create table if not exists public.houses (
+  id          uuid primary key default gen_random_uuid(),
+  name        text not null unique,
+  city        text,
+  description text,
+  logo_url    text,
+  founder_id  uuid not null references public.profiles(id) on delete cascade,
+  created_at  timestamptz not null default now()
+);
+
+create table if not exists public.house_memberships (
+  house_id   uuid not null references public.houses(id) on delete cascade,
+  user_id    uuid not null references public.profiles(id) on delete cascade,
+  role       text not null default 'child'   check (role   in ('founder', 'parent', 'child')),
+  status     text not null default 'pending' check (status in ('pending', 'active')),
+  created_at timestamptz not null default now(),
+  primary key (house_id, user_id)
+);
+
+create table if not exists public.house_messages (
+  id         uuid primary key default gen_random_uuid(),
+  house_id   uuid not null references public.houses(id) on delete cascade,
+  author_id  uuid not null references public.profiles(id) on delete cascade,
+  body       text not null,
+  created_at timestamptz not null default now()
+);
+
+-- membership-check helpers (security definer = no RLS recursion)
+create or replace function public.is_house_member(h uuid, u uuid)
+returns boolean language sql security definer set search_path = public stable as $$
+  select exists (select 1 from public.house_memberships m where m.house_id = h and m.user_id = u and m.status = 'active');
+$$;
+create or replace function public.is_house_leader(h uuid, u uuid)
+returns boolean language sql security definer set search_path = public stable as $$
+  select exists (select 1 from public.house_memberships m where m.house_id = h and m.user_id = u and m.status = 'active' and m.role in ('founder', 'parent'));
+$$;
+
+alter table public.houses           enable row level security;
+alter table public.house_memberships enable row level security;
+alter table public.house_messages   enable row level security;
+
+drop policy if exists "houses read"   on public.houses;
+drop policy if exists "houses insert" on public.houses;
+drop policy if exists "houses update" on public.houses;
+create policy "houses read"   on public.houses for select using (true);
+create policy "houses insert" on public.houses for insert to authenticated with check (auth.uid() = founder_id);
+create policy "houses update" on public.houses for update to authenticated using (public.is_house_leader(id, auth.uid()));
+
+drop policy if exists "hm read"   on public.house_memberships;
+drop policy if exists "hm insert" on public.house_memberships;
+drop policy if exists "hm update" on public.house_memberships;
+drop policy if exists "hm delete" on public.house_memberships;
+create policy "hm read" on public.house_memberships for select using (true);
+-- request to join as yourself (child/pending), OR be the house founder bootstrapping yourself in
+create policy "hm insert" on public.house_memberships for insert to authenticated
+  with check (auth.uid() = user_id and ((role = 'child' and status = 'pending') or auth.uid() = (select founder_id from public.houses where id = house_id)));
+-- leaders approve/promote; (a leader updates rows in their house)
+create policy "hm update" on public.house_memberships for update to authenticated using (public.is_house_leader(house_id, auth.uid()));
+-- leaders remove members; or you remove yourself (leave)
+create policy "hm delete" on public.house_memberships for delete to authenticated using (public.is_house_leader(house_id, auth.uid()) or auth.uid() = user_id);
+
+drop policy if exists "hmsg read"   on public.house_messages;
+drop policy if exists "hmsg insert" on public.house_messages;
+create policy "hmsg read"   on public.house_messages for select using (public.is_house_member(house_id, auth.uid()));
+create policy "hmsg insert" on public.house_messages for insert to authenticated with check (auth.uid() = author_id and public.is_house_member(house_id, auth.uid()));
+
+grant select on public.houses, public.house_memberships to anon, authenticated;
+grant insert, update, delete on public.houses, public.house_memberships to authenticated;
+grant select, insert on public.house_messages to authenticated;
+
+-- house views
+drop view if exists public.houses_directory;
+create view public.houses_directory as
+select h.*, (select count(*) from public.house_memberships m where m.house_id = h.id and m.status = 'active') as member_count
+from public.houses h;
+
+drop view if exists public.house_members;
+create view public.house_members as
+select m.house_id, m.user_id, m.role, m.status, m.created_at,
+  pr.username, pr.avatar_url, pr.avatar_color
+from public.house_memberships m
+join public.profiles pr on pr.id = m.user_id;
+
+grant select on public.houses_directory to anon, authenticated;
+grant select on public.house_members    to anon, authenticated;
 
 -- ============================================================
 --  Done.
