@@ -33,6 +33,7 @@ create table if not exists public.posts (
 );
 alter table public.posts add column if not exists media_url  text;
 alter table public.posts add column if not exists media_type text;  -- 'image' | 'video'
+alter table public.posts add column if not exists link_url   text;  -- embedded clip: YouTube, TikTok, Instagram, etc.
 
 -- ---------- COMMENTS (threaded via parent_id) ----------
 create table if not exists public.comments (
@@ -159,7 +160,7 @@ drop view if exists public.post_feed;
 create view public.post_feed as
 select
   p.id, p.category, p.title, p.body, p.created_at, p.author_id,
-  p.media_url, p.media_type,
+  p.media_url, p.media_type, p.link_url,
   pr.username as author, pr.house as author_house, pr.avatar_url as author_avatar, pr.avatar_color as author_color,
   coalesce((select sum(v.value) from public.votes v where v.post_id = p.id), 0) as score,
   (select count(*) from public.comments c where c.post_id = p.id) as comment_count
@@ -199,6 +200,8 @@ create table if not exists public.house_memberships (
   created_at timestamptz not null default now(),
   primary key (house_id, user_id)
 );
+-- a person can be an ACTIVE member of only one house at a time (you rep one house)
+create unique index if not exists house_one_active on public.house_memberships (user_id) where status = 'active';
 
 create table if not exists public.house_messages (
   id         uuid primary key default gen_random_uuid(),

@@ -45,6 +45,7 @@ export default function Houses({ me, promptSignIn, goOnboard, openProfile }) {
   const [hview, setHview] = useState("list");
   const [houses, setHouses] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [myActive, setMyActive] = useState(null);
   const [house, setHouse] = useState(null);
   const [members, setMembers] = useState([]);
   const [messages, setMessages] = useState([]);
@@ -62,7 +63,16 @@ export default function Houses({ me, promptSignIn, goOnboard, openProfile }) {
     setHouses(data || []); setLoading(false);
   }, []);
 
-  useEffect(() => { loadHouses(); }, [loadHouses]);
+  const loadMyActive = useCallback(async () => {
+    if (!me) { setMyActive(null); return; }
+    const { data } = await supabase.from("house_memberships").select("house_id").eq("user_id", me.id).eq("status", "active").maybeSingle();
+    if (data && data.house_id) {
+      const { data: h } = await supabase.from("houses").select("id,name").eq("id", data.house_id).single();
+      setMyActive(h ? { id: h.id, name: h.name } : null);
+    } else setMyActive(null);
+  }, [me]);
+
+  useEffect(() => { loadHouses(); loadMyActive(); }, [loadHouses, loadMyActive]);
 
   const openHouse = useCallback(async (id) => {
     setHview("detail"); setHouse(null); setMembers([]); setMessages([]); setMsgText(""); setErr(null);
@@ -100,18 +110,20 @@ export default function Houses({ me, promptSignIn, goOnboard, openProfile }) {
 
   const createHouse = async () => {
     if (!gate() || !form.name.trim() || busy) return;
+    if (myActive) { setErr("You're already in " + myActive.name + ". Leave it before founding a new house."); return; }
     setBusy(true); setErr(null);
     const { data, error } = await supabase.from("houses").insert({ name: form.name.trim(), city: form.city.trim() || null, description: form.description.trim() || null, logo_url: form.logo_url, founder_id: me.id }).select("id").single();
     if (error) { setErr(error.code === "23505" ? "A house with that name already exists." : "Could not create: " + error.message); setBusy(false); return; }
     await supabase.from("house_memberships").insert({ house_id: data.id, user_id: me.id, role: "founder", status: "active" });
     setForm({ name: "", city: "", description: "", logo_url: null });
     setBusy(false);
-    await loadHouses();
+    await loadHouses(); await loadMyActive();
     openHouse(data.id);
   };
 
   const requestJoin = async () => {
     if (!gate() || !house || busy) return;
+    if (myActive && myActive.id !== house.id) { setErr("You're in " + myActive.name + ". Leave it before joining another house."); return; }
     setBusy(true);
     const { error } = await supabase.from("house_memberships").insert({ house_id: house.id, user_id: me.id, role: "child", status: "pending" });
     if (error) setErr("Couldn't request to join: " + error.message);
@@ -121,11 +133,12 @@ export default function Houses({ me, promptSignIn, goOnboard, openProfile }) {
     if (!house || busy) return;
     setBusy(true);
     await supabase.from("house_memberships").delete().eq("house_id", house.id).eq("user_id", me.id);
-    setBusy(false); openHouse(house.id);
+    setBusy(false); await loadMyActive(); openHouse(house.id);
   };
   const setMemberStatus = async (userId, status) => {
     setBusy(true);
-    await supabase.from("house_memberships").update({ status }).eq("house_id", house.id).eq("user_id", userId);
+    const { error } = await supabase.from("house_memberships").update({ status }).eq("house_id", house.id).eq("user_id", userId);
+    if (error) setErr(error.code === "23505" ? "That person is already active in another house and must leave it first." : "Could not update: " + error.message);
     setBusy(false); openHouse(house.id);
   };
   const removeMember = async (userId) => {
@@ -179,6 +192,7 @@ export default function Houses({ me, promptSignIn, goOnboard, openProfile }) {
         <button onClick={() => setHview("list")} style={{ fontWeight: 600, marginBottom: 16, color: C.muted, fontSize: 13, background: "none", border: "none", cursor: "pointer", padding: 0 }}>← cancel</button>
         <h1 style={{ fontWeight: 900, margin: "0 0 4px", fontSize: 24 }}>Start a house</h1>
         <p style={{ color: C.muted, fontSize: 14, margin: "0 0 22px" }}>You'll be the founder. Members request to join and you approve them.</p>
+        {myActive && <div style={{ color: C.magenta, fontSize: 13, margin: "0 0 18px", lineHeight: 1.5 }}>You're already in {myActive.name}. You can only be in one house at a time — leave it first to found a new one.</div>}
         <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 22 }}>
           <HouseLogo name={form.name} url={form.logo_url} size={72} />
           <div>
@@ -193,7 +207,7 @@ export default function Houses({ me, promptSignIn, goOnboard, openProfile }) {
         <label style={label}>Description <span style={{ textTransform: "none", color: C.mutedDim, letterSpacing: 0 }}>(optional)</span></label>
         <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="What the house is about." rows={4} style={{ ...inputStyle, marginBottom: 18, resize: "vertical" }} />
         {err && <div style={{ color: C.magenta, fontSize: 13, marginBottom: 14 }}>{err}</div>}
-        <button onClick={createHouse} disabled={!form.name.trim() || busy || uploading} style={{ fontWeight: 700, background: form.name.trim() ? `linear-gradient(135deg, ${C.magenta}, ${C.violet})` : C.panel2, color: form.name.trim() ? C.ink : C.mutedDim, borderRadius: 999, padding: "11px 26px", fontSize: 14, border: "none", cursor: form.name.trim() && !busy ? "pointer" : "not-allowed" }}>{busy ? "Creating…" : "Create house"}</button>
+        <button onClick={createHouse} disabled={!form.name.trim() || busy || uploading || !!myActive} style={{ fontWeight: 700, background: form.name.trim() && !myActive ? `linear-gradient(135deg, ${C.magenta}, ${C.violet})` : C.panel2, color: form.name.trim() && !myActive ? C.ink : C.mutedDim, borderRadius: 999, padding: "11px 26px", fontSize: 14, border: "none", cursor: form.name.trim() && !busy && !myActive ? "pointer" : "not-allowed" }}>{busy ? "Creating…" : "Create house"}</button>
       </div>
     );
   }
@@ -217,7 +231,11 @@ export default function Houses({ me, promptSignIn, goOnboard, openProfile }) {
             </div>
           </div>
           {me && (
-            !myMembership ? <button onClick={requestJoin} disabled={busy} style={{ fontWeight: 700, fontSize: 13, background: `linear-gradient(135deg, ${C.magenta}, ${C.violet})`, color: C.ink, border: "none", borderRadius: 999, padding: "9px 16px", cursor: "pointer" }}>Request to join</button>
+            !myMembership ? (
+              myActive && myActive.id !== house.id
+                ? <span style={{ fontSize: 12.5, color: C.muted, maxWidth: 190, textAlign: "right", lineHeight: 1.4 }}>You're in {myActive.name}. Leave it to join another house.</span>
+                : <button onClick={requestJoin} disabled={busy} style={{ fontWeight: 700, fontSize: 13, background: `linear-gradient(135deg, ${C.magenta}, ${C.violet})`, color: C.ink, border: "none", borderRadius: 999, padding: "9px 16px", cursor: "pointer" }}>Request to join</button>
+            )
             : myMembership.status === "pending" ? <span style={{ fontWeight: 700, fontSize: 13, color: C.gold, border: `1px solid ${C.gold}55`, borderRadius: 999, padding: "8px 14px" }}>Requested</span>
             : myMembership.role !== "founder" ? <button onClick={leaveHouse} disabled={busy} style={{ fontWeight: 700, fontSize: 13, background: C.panel2, color: C.muted, border: `1px solid ${C.border}`, borderRadius: 999, padding: "8px 14px", cursor: "pointer" }}>Leave</button>
             : null
@@ -225,6 +243,7 @@ export default function Houses({ me, promptSignIn, goOnboard, openProfile }) {
         </div>
         {house.description ? <p style={{ color: C.text, fontSize: 14.5, lineHeight: 1.6, margin: "16px 0 0" }}>{house.description}</p> : null}
       </div>
+      {err && <div style={{ color: C.magenta, fontSize: 13, marginTop: 12 }}>{err}</div>}
 
       {/* pending requests (leaders only) */}
       {iAmLeader && pendings.length > 0 && (

@@ -126,6 +126,6 @@ If you ever incorporate the project and decide it's worth it, you'd: complete Me
 
 ## What's built / what's next
 
-Built in: profiles (username, house, scene, avatar), photo/video on posts, threaded comments with voting, the **House model** (founder/parent/child roles, join approval, remove/promote, members-only board), and the **ball organizer** (create a ball, build an ordered category lineup, public ball page). Re-run `supabase/schema.sql` after pulling this version to add the house and ball tables.
+Built in: profiles (username, house, scene, avatar), threaded comments with voting, the **House model** (founder/parent/child roles, join approval, remove/promote, members-only board, **one active house per person**), the **ball organizer** (create a ball, ordered category lineup, public ball page), **link embeds** on posts (paste a YouTube / TikTok / Instagram link and it plays inline), photo/video upload, and a **mobile bottom-nav + category chips** so phone users can reach everything. Re-run `supabase/schema.sql` after pulling this version.
 
-Next up (later phases we've deferred): live ball **entries and scoring** (walkers entering categories, judges marking tens / chops / grand prize). Still not here: direct messages, notifications, search.
+Next up: a **house calendar** (schedule practices/events on the private house page), then **extending the ball builder**, then live ball entries/scoring. Still not here: direct messages, notifications, search.

@@ -80,6 +80,46 @@ function MediaView({ url, type, rounded = 12, maxHeight }) {
   return <img src={url} alt="" style={{ ...common, maxHeight: maxHeight || 480, objectFit: "contain" }} />;
 }
 
+function parseEmbed(url) {
+  if (!url) return null;
+  let u;
+  try { u = new URL(url.trim()); } catch { return null; }
+  const host = u.hostname.replace(/^www\./, "").replace(/^m\./, "");
+  if (host === "youtube.com" || host === "youtube-nocookie.com") {
+    const v = u.searchParams.get("v");
+    if (v) return { type: "youtube", id: v };
+    const parts = u.pathname.split("/").filter(Boolean);
+    const si = parts.indexOf("shorts");
+    if (si >= 0 && parts[si + 1]) return { type: "youtube", id: parts[si + 1] };
+    const ei = parts.indexOf("embed");
+    if (ei >= 0 && parts[ei + 1]) return { type: "youtube", id: parts[ei + 1] };
+  }
+  if (host === "youtu.be") { const id = u.pathname.slice(1); if (id) return { type: "youtube", id }; }
+  if (host === "tiktok.com") { const m = u.pathname.match(/\/video\/(\d+)/); if (m) return { type: "tiktok", id: m[1] }; }
+  if (host === "instagram.com") { const m = u.pathname.match(/\/(p|reel|tv)\/([^/]+)/); if (m) return { type: "instagram", code: m[2] }; }
+  return { type: "link", url: u.href };
+}
+
+function LinkEmbed({ url }) {
+  const e = parseEmbed(url);
+  if (!e) return null;
+  const frame = { marginTop: 12, borderRadius: 12, overflow: "hidden", border: `1px solid ${C.border}`, background: "#000" };
+  if (e.type === "youtube") {
+    return (
+      <div style={{ ...frame, position: "relative", paddingBottom: "56.25%", height: 0 }}>
+        <iframe src={`https://www.youtube-nocookie.com/embed/${e.id}`} title="YouTube" allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: 0 }} />
+      </div>
+    );
+  }
+  if (e.type === "tiktok") {
+    return <div style={frame}><iframe src={`https://www.tiktok.com/embed/v2/${e.id}`} title="TikTok" allow="encrypted-media; fullscreen" style={{ width: "100%", height: 600, border: 0, display: "block" }} /></div>;
+  }
+  if (e.type === "instagram") {
+    return <div style={frame}><iframe src={`https://www.instagram.com/p/${e.code}/embed`} title="Instagram" scrolling="no" style={{ width: "100%", height: 560, border: 0, display: "block" }} /></div>;
+  }
+  return <a href={e.url} target="_blank" rel="noopener noreferrer" style={{ display: "block", marginTop: 12, padding: "12px 14px", borderRadius: 12, border: `1px solid ${C.border}`, background: C.panel2, color: C.violet, fontSize: 13.5, fontWeight: 600, wordBreak: "break-all", textDecoration: "none" }}>{e.url}</a>;
+}
+
 /* ---------- profile form (onboarding + edit) ---------- */
 function ProfileForm({ mode, me, initial, onSaved, onCancel }) {
   const [username, setUsername] = useState(initial.username || "");
@@ -165,7 +205,7 @@ export default function Forum() {
   const [me, setMe] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showSignIn, setShowSignIn] = useState(false);
-  const [draft, setDraft] = useState({ title: "", body: "", room: "performance", media_url: null, media_type: null });
+  const [draft, setDraft] = useState({ title: "", body: "", room: "performance", media_url: null, media_type: null, link_url: "" });
   const [commentText, setCommentText] = useState("");
   const [profileData, setProfileData] = useState(null);
   const [email, setEmail] = useState("");
@@ -281,10 +321,10 @@ export default function Forum() {
   const submitPost = async () => {
     if (!requireIdentity() || !draft.title.trim() || busy) return;
     setBusy(true);
-    const { data, error } = await supabase.from("posts").insert({ author_id: me.id, category: draft.room, title: draft.title.trim(), body: draft.body.trim(), media_url: draft.media_url, media_type: draft.media_type }).select("id").single();
+    const { data, error } = await supabase.from("posts").insert({ author_id: me.id, category: draft.room, title: draft.title.trim(), body: draft.body.trim(), media_url: draft.media_url, media_type: draft.media_type, link_url: draft.link_url && draft.link_url.trim() ? draft.link_url.trim() : null }).select("id").single();
     if (!error && data) {
       await supabase.from("votes").upsert({ post_id: data.id, user_id: me.id, value: 1 }, { onConflict: "post_id,user_id" });
-      setDraft({ title: "", body: "", room: "performance", media_url: null, media_type: null });
+      setDraft({ title: "", body: "", room: "performance", media_url: null, media_type: null, link_url: "" });
       await loadFeed(); await loadMyVotes(me.id); await openPost(data.id);
     }
     setBusy(false);
@@ -365,7 +405,7 @@ export default function Forum() {
             : view === "edit" && me ? <ProfileForm mode="edit" me={me} initial={me} onSaved={(u) => { onProfileSaved(u); openProfile(u.username); }} onCancel={() => me.username && openProfile(me.username)} />
             : (
               <>
-                {view === "feed" && <Feed visible={visible} room={room} sort={sort} setSort={setSort} votes={votes} applyVote={applyVote} openPost={openPost} openProfile={openProfile} />}
+                {view === "feed" && <Feed visible={visible} room={room} sort={sort} setSort={setSort} votes={votes} applyVote={applyVote} openPost={openPost} openProfile={openProfile} onPickRoom={navTo} />}
                 {view === "houses" && <Houses me={me} promptSignIn={() => setShowSignIn(true)} goOnboard={() => setView("onboarding")} openProfile={openProfile} />}
                 {view === "balls" && <Balls me={me} promptSignIn={() => setShowSignIn(true)} goOnboard={() => setView("onboarding")} openProfile={openProfile} />}
                 {view === "post" && selected && (
@@ -405,7 +445,37 @@ export default function Forum() {
         </div>
       )}
 
-      <style>{`@media (max-width: 760px){ .rail{display:none !important} .hide-sm{display:none !important} }`}</style>
+      <nav className="bottomnav">
+        {[
+          { k: "home", icon: <Home size={20} />, label: "Home", on: () => navTo("home"), active: view === "feed" },
+          { k: "houses", icon: <Users size={20} />, label: "Houses", on: () => setView("houses"), active: view === "houses" },
+          { k: "balls", icon: <Calendar size={20} />, label: "Balls", on: () => setView("balls"), active: view === "balls" },
+          { k: "post", icon: <Plus size={20} />, label: "Post", on: () => { if (requireIdentity()) setView("create"); }, active: view === "create" },
+        ].map((t) => (
+          <button key={t.k} onClick={t.on} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2, background: "none", border: "none", cursor: "pointer", padding: "9px 0", color: t.active ? C.magenta : C.muted, fontSize: 10.5, fontWeight: 700 }}>
+            {t.icon}{t.label}
+          </button>
+        ))}
+      </nav>
+
+      <style>{`
+        .bottomnav { display: none; }
+        .mobile-cats { display: none; }
+        @media (max-width: 760px) {
+          .rail { display: none !important; }
+          .hide-sm { display: none !important; }
+          main { padding-bottom: 86px !important; }
+          .mobile-cats { display: flex !important; }
+          .bottomnav {
+            display: flex;
+            position: fixed; left: 0; right: 0; bottom: 0; z-index: 25;
+            background: rgba(20,16,31,0.97);
+            border-top: 1px solid ${C.border};
+            backdrop-filter: blur(10px);
+            padding-bottom: env(safe-area-inset-bottom);
+          }
+        }
+      `}</style>
     </div>
   );
 }
@@ -444,14 +514,21 @@ function PostCard({ post, vote, applyVote, openPost, openProfile }) {
           {post.body ? <p style={{ color: C.muted, fontSize: 13.5, lineHeight: 1.5, margin: 0 }} className="line-clamp-2">{post.body}</p> : null}
         </button>
         {post.media_url ? <MediaView url={post.media_url} type={post.media_type} maxHeight={280} /> : null}
+        {post.link_url ? <LinkEmbed url={post.link_url} /> : null}
         <button onClick={() => openPost(post.id)} style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 10, fontWeight: 600, color: C.muted, fontSize: 12.5, background: "none", border: "none", cursor: "pointer", padding: 0 }}><MessageCircle size={15} /> {post.comment_count} {post.comment_count === 1 ? "reply" : "replies"}</button>
       </div>
     </div>
   );
 }
-function Feed({ visible, room, sort, setSort, votes, applyVote, openPost, openProfile }) {
+function Feed({ visible, room, sort, setSort, votes, applyVote, openPost, openProfile, onPickRoom }) {
   return (
     <div>
+      <div className="mobile-cats" style={{ gap: 8, overflowX: "auto", paddingBottom: 12, marginBottom: 2 }}>
+        {["home", ...ROOMS].map((r) => {
+          const active = r === "home" ? room === "home" : room === r;
+          return <button key={r} onClick={() => onPickRoom(r)} style={{ whiteSpace: "nowrap", fontWeight: 700, fontSize: 12.5, padding: "6px 14px", borderRadius: 999, border: `1px solid ${active ? C.gold : C.border}`, background: active ? C.gold : "transparent", color: active ? C.ink : C.muted, cursor: "pointer", flexShrink: 0 }}>{r === "home" ? "Home" : r}</button>;
+        })}
+      </div>
       <Toolbar room={room} sort={sort} setSort={setSort} />
       {visible.length === 0 ? <div style={{ border: `1px dashed ${C.border}`, borderRadius: 14, padding: 32, textAlign: "center", color: C.muted }}>Nothing here yet. Be the first to post.</div>
         : visible.map((p) => <PostCard key={p.id} post={p} vote={votes[p.id]} applyVote={applyVote} openPost={openPost} openProfile={openProfile} />)}
@@ -521,6 +598,7 @@ function PostDetail({ post, comments, cVotes, voteComment, vote, applyVote, back
             <h1 style={{ fontWeight: 900, lineHeight: 1.15, margin: "0 0 12px", fontSize: 22 }}>{post.title}</h1>
             {post.body ? <p style={{ color: C.text, fontSize: 15, lineHeight: 1.65, margin: 0, whiteSpace: "pre-wrap" }}>{post.body}</p> : null}
             {post.media_url ? <MediaView url={post.media_url} type={post.media_type} /> : null}
+            {post.link_url ? <LinkEmbed url={post.link_url} /> : null}
           </div>
         </div>
       </div>
@@ -606,7 +684,11 @@ function Create({ draft, setDraft, submitPost, back, inputStyle, busy, me }) {
       <label style={label}>Title</label>
       <input value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder="Say it plainly" style={{ ...inputStyle, marginBottom: 16 }} />
       <label style={label}>Body</label>
-      <textarea value={draft.body} onChange={(e) => setDraft({ ...draft, body: e.target.value })} placeholder="Optional with a photo or video." rows={5} style={{ ...inputStyle, marginBottom: 16, resize: "vertical" }} />
+      <textarea value={draft.body} onChange={(e) => setDraft({ ...draft, body: e.target.value })} placeholder="Optional with a link or photo." rows={5} style={{ ...inputStyle, marginBottom: 16, resize: "vertical" }} />
+
+      <label style={label}>Link <span style={{ textTransform: "none", color: C.mutedDim, letterSpacing: 0 }}>(YouTube, TikTok, Instagram — optional)</span></label>
+      <input value={draft.link_url} onChange={(e) => setDraft({ ...draft, link_url: e.target.value })} placeholder="Paste a clip link to embed it" style={{ ...inputStyle, marginBottom: 16 }} />
+      {draft.link_url && draft.link_url.trim() ? <div style={{ marginBottom: 16, marginTop: -4 }}><LinkEmbed url={draft.link_url} /></div> : null}
 
       <label style={label}>Photo or video <span style={{ textTransform: "none", color: C.mutedDim, letterSpacing: 0 }}>(optional, up to {MAX_MEDIA_MB}MB)</span></label>
       <input ref={fileRef} type="file" accept="image/*,video/*" onChange={pickMedia} style={{ display: "none" }} />
