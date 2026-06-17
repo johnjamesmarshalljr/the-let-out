@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { ChevronUp, ChevronDown, MessageCircle, Plus, Home, X, LogOut, Camera, Pencil, Film, Users } from "lucide-react";
+import { ChevronUp, ChevronDown, MessageCircle, Plus, Home, X, LogOut, Camera, Pencil, Film, Users, Calendar } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import Houses from "@/components/Houses";
+import Balls from "@/components/Balls";
 
 const C = {
   ink: "#14101f", panel: "#1e1830", panel2: "#241c39",
@@ -352,7 +353,8 @@ export default function Forum() {
       <div style={{ display: "flex", maxWidth: 1000, margin: "0 auto" }}>
         <aside className="rail" style={{ flexShrink: 0, padding: "20px 12px", width: 200, borderRight: `1px solid ${C.border}` }}>
           <button onClick={() => navTo("home")} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", fontWeight: 700, marginBottom: 4, padding: "9px 10px", borderRadius: 9, fontSize: 14, border: "none", cursor: "pointer", color: view === "feed" && room === "home" ? C.ink : C.text, background: view === "feed" && room === "home" ? C.gold : "transparent" }}><Home size={16} /> Home</button>
-          <button onClick={() => setView("houses")} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", fontWeight: 700, marginBottom: 12, padding: "9px 10px", borderRadius: 9, fontSize: 14, border: "none", cursor: "pointer", color: view === "houses" ? C.ink : C.text, background: view === "houses" ? C.gold : "transparent" }}><Users size={16} /> Houses</button>
+          <button onClick={() => setView("houses")} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", fontWeight: 700, marginBottom: 4, padding: "9px 10px", borderRadius: 9, fontSize: 14, border: "none", cursor: "pointer", color: view === "houses" ? C.ink : C.text, background: view === "houses" ? C.gold : "transparent" }}><Users size={16} /> Houses</button>
+          <button onClick={() => setView("balls")} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", fontWeight: 700, marginBottom: 12, padding: "9px 10px", borderRadius: 9, fontSize: 14, border: "none", cursor: "pointer", color: view === "balls" ? C.ink : C.text, background: view === "balls" ? C.gold : "transparent" }}><Calendar size={16} /> Balls</button>
           <div style={{ textTransform: "uppercase", fontWeight: 700, padding: "0 8px", marginBottom: 8, fontSize: 10, letterSpacing: "0.18em", color: C.mutedDim }}>Categories</div>
           {ROOMS.map((r) => <button key={r} onClick={() => navTo(r)} style={{ display: "block", width: "100%", textAlign: "left", fontWeight: 600, padding: "8px 10px", borderRadius: 9, fontSize: 14, border: "none", cursor: "pointer", background: room === r ? C.panel2 : "transparent", color: room === r ? C.text : C.muted }}>{r}</button>)}
         </aside>
@@ -365,6 +367,7 @@ export default function Forum() {
               <>
                 {view === "feed" && <Feed visible={visible} room={room} sort={sort} setSort={setSort} votes={votes} applyVote={applyVote} openPost={openPost} openProfile={openProfile} />}
                 {view === "houses" && <Houses me={me} promptSignIn={() => setShowSignIn(true)} goOnboard={() => setView("onboarding")} openProfile={openProfile} />}
+                {view === "balls" && <Balls me={me} promptSignIn={() => setShowSignIn(true)} goOnboard={() => setView("onboarding")} openProfile={openProfile} />}
                 {view === "post" && selected && (
                   <PostDetail post={selected} comments={comments} cVotes={cVotes} voteComment={voteComment} vote={votes[selected.id]} applyVote={applyVote} back={() => setView("feed")} openProfile={openProfile} me={me} commentText={commentText} setCommentText={setCommentText} submitComment={submitComment} replyTo={replyTo} setReplyTo={setReplyTo} replyText={replyText} setReplyText={setReplyText} promptSignIn={() => setShowSignIn(true)} goOnboard={() => setView("onboarding")} inputStyle={inputStyle} busy={busy} />
                 )}

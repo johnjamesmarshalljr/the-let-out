@@ -268,5 +268,69 @@ grant select on public.houses_directory to anon, authenticated;
 grant select on public.house_members    to anon, authenticated;
 
 -- ============================================================
+--  BALLS (organizer + ordered category lineup)
+-- ============================================================
+create table if not exists public.balls (
+  id           uuid primary key default gen_random_uuid(),
+  name         text not null,
+  ball_date    date,
+  location     text,
+  description  text,
+  flyer_url    text,
+  status       text not null default 'upcoming' check (status in ('upcoming', 'completed')),
+  organizer_id uuid not null references public.profiles(id) on delete cascade,
+  created_at   timestamptz not null default now()
+);
+
+create table if not exists public.ball_categories (
+  id            uuid primary key default gen_random_uuid(),
+  ball_id       uuid not null references public.balls(id) on delete cascade,
+  name          text not null,
+  category_type text not null default 'other' check (category_type in ('performance', 'runway', 'face', 'realness', 'voguing', 'fashion', 'other')),
+  prize         text,
+  description   text,
+  position      int not null default 0,
+  created_at    timestamptz not null default now()
+);
+
+create or replace function public.is_ball_organizer(b uuid, u uuid)
+returns boolean language sql security definer set search_path = public stable as $$
+  select exists (select 1 from public.balls bb where bb.id = b and bb.organizer_id = u);
+$$;
+
+alter table public.balls           enable row level security;
+alter table public.ball_categories enable row level security;
+
+drop policy if exists "balls read"   on public.balls;
+drop policy if exists "balls insert" on public.balls;
+drop policy if exists "balls update" on public.balls;
+drop policy if exists "balls delete" on public.balls;
+create policy "balls read"   on public.balls for select using (true);
+create policy "balls insert" on public.balls for insert to authenticated with check (auth.uid() = organizer_id);
+create policy "balls update" on public.balls for update to authenticated using (auth.uid() = organizer_id);
+create policy "balls delete" on public.balls for delete to authenticated using (auth.uid() = organizer_id);
+
+drop policy if exists "bc read"   on public.ball_categories;
+drop policy if exists "bc insert" on public.ball_categories;
+drop policy if exists "bc update" on public.ball_categories;
+drop policy if exists "bc delete" on public.ball_categories;
+create policy "bc read"   on public.ball_categories for select using (true);
+create policy "bc insert" on public.ball_categories for insert to authenticated with check (public.is_ball_organizer(ball_id, auth.uid()));
+create policy "bc update" on public.ball_categories for update to authenticated using (public.is_ball_organizer(ball_id, auth.uid()));
+create policy "bc delete" on public.ball_categories for delete to authenticated using (public.is_ball_organizer(ball_id, auth.uid()));
+
+grant select on public.balls, public.ball_categories to anon, authenticated;
+grant insert, update, delete on public.balls, public.ball_categories to authenticated;
+
+drop view if exists public.balls_directory;
+create view public.balls_directory as
+select b.*, pr.username as organizer,
+  (select count(*) from public.ball_categories c where c.ball_id = b.id) as category_count
+from public.balls b
+join public.profiles pr on pr.id = b.organizer_id;
+
+grant select on public.balls_directory to anon, authenticated;
+
+-- ============================================================
 --  Done.
 -- ============================================================

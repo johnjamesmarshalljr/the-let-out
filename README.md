@@ -126,6 +126,6 @@ If you ever incorporate the project and decide it's worth it, you'd: complete Me
 
 ## What's built / what's next
 
-Built in: profiles (username, house, scene, avatar), photo/video on posts, threaded comments with voting, and the **House model** — houses with founder/parent/child roles, join requests with leader approval, remove/promote, and a members-only private board. Re-run `supabase/schema.sql` after pulling this version to add the house tables.
+Built in: profiles (username, house, scene, avatar), photo/video on posts, threaded comments with voting, the **House model** (founder/parent/child roles, join approval, remove/promote, members-only board), and the **ball organizer** (create a ball, build an ordered category lineup, public ball page). Re-run `supabase/schema.sql` after pulling this version to add the house and ball tables.
 
-Next up: the **ball organizer** (create a ball, build an ordered category lineup, publish it), then live entries/scoring as a later phase. Still not here: direct messages, notifications, search.
+Next up (later phases we've deferred): live ball **entries and scoring** (walkers entering categories, judges marking tens / chops / grand prize). Still not here: direct messages, notifications, search.
