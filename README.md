@@ -126,6 +126,6 @@ If you ever incorporate the project and decide it's worth it, you'd: complete Me
 
 ## What's built / what's next
 
-Built in: a single forum feed with **Hot/New/Top sorting, tags, and a search bar** (tags replaced fixed categories — tap any tag to filter), profiles, threaded comments with voting, **link embeds** (YouTube/TikTok/Instagram play inline), photo/video upload, the **House model** (founder/parent/child roles, join approval, one active house per person, members-only board, and a **members-only calendar** for practices/events), the **ball organizer** (ordered category lineup + public page), and a **mobile bottom-nav** so phone users reach everything. Re-run `supabase/schema.sql` after pulling this version.
+Built in: a single forum feed with **Hot/New/Top sorting, tags, and a search bar**, profiles, threaded comments with voting and **meme/GIF images**, link embeds (YouTube/TikTok/Instagram), photo/video upload, the **House model** (free-text titles, leader permissions, leader-add by username, **invite links**, join approval, one active house per person, members-only board + calendar), the **ball organizer** (ordered category lineup + public page), and — the differentiator — a **results layer**: organizers record category winners, which accrue as permanent **trophies on profiles and houses** and feed **house + walker standings**. Re-run `supabase/schema.sql` after pulling this version.
 
-Next up: **extending the ball builder**, then live ball entries/scoring. Still not here: direct messages, notifications.
+Next up: deepening results (placements beyond the winner, ball registration/RSVP), then notifications. Still not here: direct messages.

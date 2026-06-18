@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { Plus, Camera, MapPin, Crown, X, Check, UserMinus, ArrowUp, Calendar, Trash2 } from "lucide-react";
+import { Plus, Camera, MapPin, Crown, X, Check, UserMinus, ArrowUp, Calendar, Trash2, Link2, Pencil, UserPlus, Trophy } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 
 const C = {
@@ -36,10 +36,10 @@ function HouseLogo({ name, url, size = 56 }) {
   return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, flexShrink: 0, width: size, height: size, borderRadius: 14, background: `linear-gradient(135deg, ${C.violet}, ${C.magenta})`, color: C.ink, fontSize: size * 0.4 }}>{letter}</div>;
 }
 
-function RoleBadge({ role }) {
-  if (role === "child") return null;
-  const color = role === "founder" ? C.gold : C.violet;
-  return <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10.5, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em", color, border: `1px solid ${color}55`, borderRadius: 999, padding: "1px 8px" }}><Crown size={11} /> {role}</span>;
+function TitleBadge({ title, isLeader }) {
+  if (!title && !isLeader) return null;
+  const color = isLeader ? C.gold : C.violet;
+  return <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10.5, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em", color, border: `1px solid ${color}55`, borderRadius: 999, padding: "1px 8px" }}>{isLeader ? <Crown size={11} /> : null} {title || "Leader"}</span>;
 }
 
 const inputStyle = { background: C.ink, border: `1px solid ${C.border}`, borderRadius: 10, color: C.text, padding: "10px 12px", width: "100%", outline: "none", fontSize: 14 };
@@ -54,11 +54,15 @@ export default function Houses({ me, promptSignIn, goOnboard, openProfile }) {
   const [members, setMembers] = useState([]);
   const [messages, setMessages] = useState([]);
   const [events, setEvents] = useState([]);
+  const [houseTrophies, setHouseTrophies] = useState([]);
   const [evt, setEvt] = useState({ title: "", date: "", note: "" });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
   const [msgText, setMsgText] = useState("");
-  const [form, setForm] = useState({ name: "", city: "", description: "", logo_url: null });
+  const [form, setForm] = useState({ name: "", city: "", description: "", logo_url: null, title: "" });
+  const [addUser, setAddUser] = useState("");
+  const [inviteUrl, setInviteUrl] = useState(null);
+  const [editTitle, setEditTitle] = useState(null); // { userId, value }
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef(null);
 
@@ -81,9 +85,11 @@ export default function Houses({ me, promptSignIn, goOnboard, openProfile }) {
   useEffect(() => { loadHouses(); loadMyActive(); }, [loadHouses, loadMyActive]);
 
   const openHouse = useCallback(async (id) => {
-    setHview("detail"); setHouse(null); setMembers([]); setMessages([]); setEvents([]); setMsgText(""); setErr(null);
+    setHview("detail"); setHouse(null); setMembers([]); setMessages([]); setEvents([]); setHouseTrophies([]); setMsgText(""); setErr(null); setInviteUrl(null); setAddUser(""); setEditTitle(null);
     const { data: h } = await supabase.from("houses_directory").select("*").eq("id", id).single();
     setHouse(h);
+    const { data: trophies } = await supabase.from("ball_results_feed").select("category_name,ball_name,ball_date,winner_username").eq("winner_house_id", id).order("ball_date", { ascending: false });
+    setHouseTrophies(trophies || []);
     const { data: m } = await supabase.from("house_members").select("*").eq("house_id", id).order("created_at", { ascending: true });
     setMembers(m || []);
     // messages only load if active member (RLS will simply return nothing otherwise)
@@ -101,7 +107,8 @@ export default function Houses({ me, promptSignIn, goOnboard, openProfile }) {
   }, [me]);
 
   const myMembership = me && members.find((x) => x.user_id === me.id);
-  const iAmLeader = myMembership && myMembership.status === "active" && (myMembership.role === "founder" || myMembership.role === "parent");
+  const iAmLeader = myMembership && myMembership.status === "active" && myMembership.is_leader === true;
+  const iAmFounder = myMembership && house && me && house.founder_id === me.id;
   const iAmActive = myMembership && myMembership.status === "active";
 
   const uploadLogo = async (e) => {
@@ -122,8 +129,8 @@ export default function Houses({ me, promptSignIn, goOnboard, openProfile }) {
     setBusy(true); setErr(null);
     const { data, error } = await supabase.from("houses").insert({ name: form.name.trim(), city: form.city.trim() || null, description: form.description.trim() || null, logo_url: form.logo_url, founder_id: me.id }).select("id").single();
     if (error) { setErr(error.code === "23505" ? "A house with that name already exists." : "Could not create: " + error.message); setBusy(false); return; }
-    await supabase.from("house_memberships").insert({ house_id: data.id, user_id: me.id, role: "founder", status: "active" });
-    setForm({ name: "", city: "", description: "", logo_url: null });
+    await supabase.from("house_memberships").insert({ house_id: data.id, user_id: me.id, status: "active", is_leader: true, title: form.title.trim() || "Mother" });
+    setForm({ name: "", city: "", description: "", logo_url: null, title: "" });
     setBusy(false);
     await loadHouses(); await loadMyActive();
     openHouse(data.id);
@@ -133,7 +140,7 @@ export default function Houses({ me, promptSignIn, goOnboard, openProfile }) {
     if (!gate() || !house || busy) return;
     if (myActive && myActive.id !== house.id) { setErr("You're in " + myActive.name + ". Leave it before joining another house."); return; }
     setBusy(true);
-    const { error } = await supabase.from("house_memberships").insert({ house_id: house.id, user_id: me.id, role: "child", status: "pending" });
+    const { error } = await supabase.from("house_memberships").insert({ house_id: house.id, user_id: me.id, status: "pending" });
     if (error) setErr("Couldn't request to join: " + error.message);
     setBusy(false); openHouse(house.id);
   };
@@ -154,10 +161,37 @@ export default function Houses({ me, promptSignIn, goOnboard, openProfile }) {
     await supabase.from("house_memberships").delete().eq("house_id", house.id).eq("user_id", userId);
     setBusy(false); openHouse(house.id);
   };
-  const setRole = async (userId, role) => {
+  const toggleLeader = async (userId, makeLeader) => {
     setBusy(true);
-    await supabase.from("house_memberships").update({ role }).eq("house_id", house.id).eq("user_id", userId);
+    await supabase.from("house_memberships").update({ is_leader: makeLeader }).eq("house_id", house.id).eq("user_id", userId);
     setBusy(false); openHouse(house.id);
+  };
+  const saveTitle = async (userId) => {
+    if (!editTitle || busy) return;
+    setBusy(true);
+    await supabase.from("house_memberships").update({ title: editTitle.value.trim() || "Member" }).eq("house_id", house.id).eq("user_id", userId);
+    setEditTitle(null); setBusy(false); openHouse(house.id);
+  };
+  const addByUsername = async () => {
+    const name = addUser.trim();
+    if (!name || busy) return;
+    setBusy(true); setErr(null);
+    const { data: prof } = await supabase.from("profiles").select("id").ilike("username", name).maybeSingle();
+    if (!prof) { setErr("No one here goes by “" + name + "”. Check the spelling."); setBusy(false); return; }
+    const { error } = await supabase.from("house_memberships").insert({ house_id: house.id, user_id: prof.id, status: "active", is_leader: false, title: "Member" });
+    if (error) setErr(error.code === "23505" ? "That person is already in a house — they'd have to leave it first." : "Couldn't add them: " + error.message);
+    else setAddUser("");
+    setBusy(false); openHouse(house.id);
+  };
+  const createInvite = async () => {
+    if (busy) return;
+    setBusy(true); setErr(null);
+    const { data, error } = await supabase.from("house_invites").insert({ house_id: house.id, created_by: me.id }).select("token").single();
+    setBusy(false);
+    if (error || !data) { setErr("Couldn't make an invite link: " + (error ? error.message : "unknown")); return; }
+    const url = window.location.origin + "/?invite=" + data.token;
+    setInviteUrl(url);
+    try { await navigator.clipboard.writeText(url); } catch {}
   };
   const postMessage = async () => {
     if (!msgText.trim() || busy) return;
@@ -185,7 +219,7 @@ export default function Houses({ me, promptSignIn, goOnboard, openProfile }) {
       <div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 12 }}>
           <h1 style={{ fontWeight: 900, fontSize: 22, margin: 0 }}>Houses</h1>
-          <button onClick={() => { if (gate()) { setForm({ name: "", city: "", description: "", logo_url: null }); setErr(null); setHview("create"); } }} style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 700, fontSize: 13, background: `linear-gradient(135deg, ${C.magenta}, ${C.violet})`, color: C.ink, border: "none", borderRadius: 999, padding: "8px 14px", cursor: "pointer" }}><Plus size={16} strokeWidth={2.6} /> Create a house</button>
+          <button onClick={() => { if (gate()) { setForm({ name: "", city: "", description: "", logo_url: null, title: "" }); setErr(null); setHview("create"); } }} style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 700, fontSize: 13, background: `linear-gradient(135deg, ${C.magenta}, ${C.violet})`, color: C.ink, border: "none", borderRadius: 999, padding: "8px 14px", cursor: "pointer" }}><Plus size={16} strokeWidth={2.6} /> Create a house</button>
         </div>
         {loading ? <div style={{ color: C.muted, padding: 40, textAlign: "center" }}>Loading…</div>
           : houses.length === 0 ? <div style={{ border: `1px dashed ${C.border}`, borderRadius: 14, padding: 32, textAlign: "center", color: C.muted }}>No houses yet. Start the first one.</div>
@@ -211,7 +245,7 @@ export default function Houses({ me, promptSignIn, goOnboard, openProfile }) {
       <div style={{ maxWidth: 520 }}>
         <button onClick={() => setHview("list")} style={{ fontWeight: 600, marginBottom: 16, color: C.muted, fontSize: 13, background: "none", border: "none", cursor: "pointer", padding: 0 }}>← cancel</button>
         <h1 style={{ fontWeight: 900, margin: "0 0 4px", fontSize: 24 }}>Start a house</h1>
-        <p style={{ color: C.muted, fontSize: 14, margin: "0 0 22px" }}>You'll be the founder. Members request to join and you approve them.</p>
+        <p style={{ color: C.muted, fontSize: 14, margin: "0 0 22px" }}>You lead the house. Set your own title — Mother, Father, Overall, whatever you go by.</p>
         {myActive && <div style={{ color: C.magenta, fontSize: 13, margin: "0 0 18px", lineHeight: 1.5 }}>You're already in {myActive.name}. You can only be in one house at a time — leave it first to found a new one.</div>}
         <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 22 }}>
           <HouseLogo name={form.name} url={form.logo_url} size={72} />
@@ -222,6 +256,8 @@ export default function Houses({ me, promptSignIn, goOnboard, openProfile }) {
         </div>
         <label style={label}>House name</label>
         <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. House of Gabbana" style={{ ...inputStyle, marginBottom: 18 }} />
+        <label style={label}>Your title</label>
+        <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Mother" style={{ ...inputStyle, marginBottom: 18 }} />
         <label style={label}>City <span style={{ textTransform: "none", color: C.mutedDim, letterSpacing: 0 }}>(optional)</span></label>
         <input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} placeholder="Miami" style={{ ...inputStyle, marginBottom: 18 }} />
         <label style={label}>Description <span style={{ textTransform: "none", color: C.mutedDim, letterSpacing: 0 }}>(optional)</span></label>
@@ -257,13 +293,28 @@ export default function Houses({ me, promptSignIn, goOnboard, openProfile }) {
                 : <button onClick={requestJoin} disabled={busy} style={{ fontWeight: 700, fontSize: 13, background: `linear-gradient(135deg, ${C.magenta}, ${C.violet})`, color: C.ink, border: "none", borderRadius: 999, padding: "9px 16px", cursor: "pointer" }}>Request to join</button>
             )
             : myMembership.status === "pending" ? <span style={{ fontWeight: 700, fontSize: 13, color: C.gold, border: `1px solid ${C.gold}55`, borderRadius: 999, padding: "8px 14px" }}>Requested</span>
-            : myMembership.role !== "founder" ? <button onClick={leaveHouse} disabled={busy} style={{ fontWeight: 700, fontSize: 13, background: C.panel2, color: C.muted, border: `1px solid ${C.border}`, borderRadius: 999, padding: "8px 14px", cursor: "pointer" }}>Leave</button>
+            : !iAmFounder ? <button onClick={leaveHouse} disabled={busy} style={{ fontWeight: 700, fontSize: 13, background: C.panel2, color: C.muted, border: `1px solid ${C.border}`, borderRadius: 999, padding: "8px 14px", cursor: "pointer" }}>Leave</button>
             : null
           )}
         </div>
         {house.description ? <p style={{ color: C.text, fontSize: 14.5, lineHeight: 1.6, margin: "16px 0 0" }}>{house.description}</p> : null}
       </div>
       {err && <div style={{ color: C.magenta, fontSize: 13, marginTop: 12 }}>{err}</div>}
+
+      {houseTrophies.length > 0 && (
+        <div style={{ marginTop: 22 }}>
+          <div style={{ fontWeight: 700, textTransform: "uppercase", fontSize: 11, letterSpacing: "0.16em", color: C.mutedDim, marginBottom: 10, display: "flex", alignItems: "center", gap: 7 }}><Trophy size={13} /> Trophies · {houseTrophies.length}</div>
+          {houseTrophies.map((t, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, background: C.panel, border: `1px solid ${C.gold}33`, borderRadius: 12, padding: "11px 14px", marginBottom: 8 }}>
+              <Trophy size={17} style={{ color: C.gold, flexShrink: 0 }} />
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ fontWeight: 700, fontSize: 14.5, color: C.text }}>{t.category_name}</div>
+                <div style={{ fontSize: 12.5, color: C.muted, marginTop: 2 }}>{t.ball_name}{t.winner_username ? " · " + t.winner_username : ""}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* pending requests (leaders only) */}
       {iAmLeader && pendings.length > 0 && (
@@ -282,23 +333,61 @@ export default function Houses({ me, promptSignIn, goOnboard, openProfile }) {
 
       {/* members */}
       <div style={{ marginTop: 20 }}>
-        <div style={{ fontWeight: 700, textTransform: "uppercase", fontSize: 11, letterSpacing: "0.16em", color: C.mutedDim, marginBottom: 10 }}>Members</div>
-        {actives.map((m) => (
-          <div key={m.user_id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderTop: `1px solid ${C.border}` }}>
-            <Avatar name={m.username} url={m.avatar_url} color={m.avatar_color} size={34} />
-            <button onClick={() => openProfile(m.username)} style={{ fontWeight: 700, fontSize: 14.5, color: C.text, background: "none", border: "none", cursor: "pointer", padding: 0 }}>{m.username || "unknown"}</button>
-            <RoleBadge role={m.role} />
-            <div style={{ flex: 1 }} />
-            {iAmLeader && myMembership.role === "founder" && m.role !== "founder" && (
-              <>
-                {m.role === "child"
-                  ? <button onClick={() => setRole(m.user_id, "parent")} disabled={busy} title="Promote to parent" style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 700, color: C.violet, background: "none", border: `1px solid ${C.border}`, borderRadius: 999, padding: "4px 10px", cursor: "pointer" }}><ArrowUp size={13} /> parent</button>
-                  : <button onClick={() => setRole(m.user_id, "child")} disabled={busy} style={{ fontSize: 12, fontWeight: 700, color: C.muted, background: "none", border: `1px solid ${C.border}`, borderRadius: 999, padding: "4px 10px", cursor: "pointer" }}>demote</button>}
-                <button onClick={() => removeMember(m.user_id)} disabled={busy} title="Remove" style={{ display: "flex", background: "none", border: "none", color: C.mutedDim, cursor: "pointer" }}><UserMinus size={16} /></button>
-              </>
-            )}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+          <div style={{ fontWeight: 700, textTransform: "uppercase", fontSize: 11, letterSpacing: "0.16em", color: C.mutedDim }}>Members</div>
+          {iAmLeader && <button onClick={createInvite} disabled={busy} style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 700, fontSize: 12.5, background: C.panel2, color: C.text, border: `1px solid ${C.border}`, borderRadius: 999, padding: "6px 12px", cursor: "pointer" }}><Link2 size={14} /> Invite link</button>}
+        </div>
+
+        {iAmLeader && inviteUrl && (
+          <div style={{ background: C.panel2, border: `1px solid ${C.borderHot}`, borderRadius: 10, padding: "10px 12px", marginBottom: 12 }}>
+            <div style={{ fontSize: 12, color: C.gold, fontWeight: 700, marginBottom: 4 }}>Link copied — send it via text or DM</div>
+            <div style={{ fontSize: 12.5, color: C.muted, wordBreak: "break-all" }}>{inviteUrl}</div>
+            <div style={{ fontSize: 11.5, color: C.mutedDim, marginTop: 4 }}>Anyone who opens it joins {house.name} (if they're not already in a house).</div>
           </div>
-        ))}
+        )}
+
+        {iAmLeader && (
+          <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+            <div style={{ position: "relative", flex: 1 }}>
+              <UserPlus size={15} style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", color: C.mutedDim }} />
+              <input value={addUser} onChange={(e) => setAddUser(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") addByUsername(); }} placeholder="Add a member by username" style={{ ...inputStyle, paddingLeft: 34 }} />
+            </div>
+            <button onClick={addByUsername} disabled={busy || !addUser.trim()} style={{ fontWeight: 700, fontSize: 13, background: C.panel2, color: C.text, border: `1px solid ${C.border}`, borderRadius: 10, padding: "0 16px", cursor: "pointer", opacity: busy || !addUser.trim() ? 0.6 : 1 }}>Add</button>
+          </div>
+        )}
+
+        {actives.map((m) => {
+          const isMe = me && m.user_id === me.id;
+          const isHouseFounder = house.founder_id === m.user_id;
+          const editing = editTitle && editTitle.userId === m.user_id;
+          return (
+            <div key={m.user_id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderTop: `1px solid ${C.border}`, flexWrap: "wrap" }}>
+              <Avatar name={m.username} url={m.avatar_url} color={m.avatar_color} size={34} />
+              <button onClick={() => openProfile(m.username)} style={{ fontWeight: 700, fontSize: 14.5, color: C.text, background: "none", border: "none", cursor: "pointer", padding: 0 }}>{m.username || "unknown"}</button>
+              {editing ? (
+                <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+                  <input value={editTitle.value} onChange={(e) => setEditTitle({ ...editTitle, value: e.target.value })} onKeyDown={(e) => { if (e.key === "Enter") saveTitle(m.user_id); }} autoFocus style={{ ...inputStyle, padding: "3px 8px", width: 120, fontSize: 12.5 }} />
+                  <button onClick={() => saveTitle(m.user_id)} disabled={busy} style={{ display: "flex", background: "none", border: "none", color: C.gold, cursor: "pointer", padding: 2 }}><Check size={15} /></button>
+                  <button onClick={() => setEditTitle(null)} style={{ display: "flex", background: "none", border: "none", color: C.mutedDim, cursor: "pointer", padding: 2 }}><X size={15} /></button>
+                </span>
+              ) : (
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                  <TitleBadge title={m.title} isLeader={m.is_leader} />
+                  {iAmLeader && <button onClick={() => setEditTitle({ userId: m.user_id, value: m.title || "" })} title="Edit title" style={{ display: "flex", background: "none", border: "none", color: C.mutedDim, cursor: "pointer", padding: 2 }}><Pencil size={12} /></button>}
+                </span>
+              )}
+              <div style={{ flex: 1 }} />
+              {iAmLeader && !isMe && !isHouseFounder && (
+                <>
+                  {m.is_leader
+                    ? <button onClick={() => toggleLeader(m.user_id, false)} disabled={busy} style={{ fontSize: 12, fontWeight: 700, color: C.muted, background: "none", border: `1px solid ${C.border}`, borderRadius: 999, padding: "4px 10px", cursor: "pointer" }}>remove leader</button>
+                    : <button onClick={() => toggleLeader(m.user_id, true)} disabled={busy} title="Make leader" style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 700, color: C.gold, background: "none", border: `1px solid ${C.border}`, borderRadius: 999, padding: "4px 10px", cursor: "pointer" }}><Crown size={13} /> make leader</button>}
+                  <button onClick={() => removeMember(m.user_id)} disabled={busy} title="Remove" style={{ display: "flex", background: "none", border: "none", color: C.mutedDim, cursor: "pointer" }}><UserMinus size={16} /></button>
+                </>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {/* calendar */}

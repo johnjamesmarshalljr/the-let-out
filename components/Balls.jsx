@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { Plus, Camera, MapPin, Calendar, Trash2, ArrowUp, ArrowDown, Pencil } from "lucide-react";
+import { Plus, Camera, MapPin, Calendar, Trash2, ArrowUp, ArrowDown, Pencil, Trophy, Check, X } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 
 const C = {
@@ -44,6 +44,10 @@ export default function Balls({ me, promptSignIn, goOnboard, openProfile }) {
   const [editing, setEditing] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [newCat, setNewCat] = useState({ name: "", category_type: "performance", prize: "" });
+  const [results, setResults] = useState({});        // keyed by category_id
+  const [editResult, setEditResult] = useState(null); // { categoryId, name, house }
+  const [tab, setTab] = useState("balls");            // 'balls' | 'standings'
+  const [standings, setStandings] = useState(null);
   const fileRef = useRef(null);
 
   const gate = () => { if (!me) { promptSignIn(); return false; } if (!me.onboarded) { goOnboard(); return false; } return true; };
@@ -63,11 +67,27 @@ export default function Balls({ me, promptSignIn, goOnboard, openProfile }) {
   useEffect(() => { loadBalls(); }, [loadBalls]);
 
   const openBall = useCallback(async (id) => {
-    setBview("detail"); setBall(null); setCats([]); setErr(null); setEditing(false);
+    setBview("detail"); setBall(null); setCats([]); setResults({}); setEditResult(null); setErr(null); setEditing(false);
     const { data: b } = await supabase.from("balls_directory").select("*").eq("id", id).single();
     setBall(b);
     const { data: c } = await supabase.from("ball_categories").select("*").eq("ball_id", id).order("position", { ascending: true });
     setCats(c || []);
+    const { data: r } = await supabase.from("ball_results_feed").select("*").eq("ball_id", id);
+    const map = {}; (r || []).forEach((x) => (map[x.category_id] = x)); setResults(map);
+  }, []);
+
+  const loadStandings = useCallback(async () => {
+    setStandings(null);
+    const { data } = await supabase.from("ball_results_feed").select("*");
+    const houses = {}, walkers = {};
+    (data || []).forEach((r) => {
+      const hk = r.winner_house_id || (r.winner_house_name ? "name:" + r.winner_house_name.toLowerCase() : null);
+      if (hk) { houses[hk] = houses[hk] || { name: r.winner_house_display || r.winner_house_name, id: r.winner_house_id, wins: 0 }; houses[hk].wins++; }
+      const wk = r.winner_profile_id || (r.winner_name ? "name:" + r.winner_name.toLowerCase() : null);
+      if (wk) { walkers[wk] = walkers[wk] || { name: r.winner_username || r.winner_name, username: r.winner_username, wins: 0 }; walkers[wk].wins++; }
+    });
+    const sortDesc = (o) => Object.values(o).sort((a, b) => b.wins - a.wins);
+    setStandings({ houses: sortDesc(houses), walkers: sortDesc(walkers) });
   }, []);
 
   const iAmOrganizer = me && ball && ball.organizer_id === me.id;
@@ -113,6 +133,24 @@ export default function Balls({ me, promptSignIn, goOnboard, openProfile }) {
     setBusy(false); openBall(ball.id);
   };
 
+  const saveResult = async () => {
+    if (!editResult || !editResult.name.trim() || busy) return;
+    setBusy(true);
+    const name = editResult.name.trim(), house = editResult.house.trim();
+    let winner_profile_id = null, winner_house_id = null;
+    const { data: prof } = await supabase.from("profiles").select("id").ilike("username", name).maybeSingle();
+    if (prof) winner_profile_id = prof.id;
+    if (house) { const { data: h } = await supabase.from("houses").select("id").ilike("name", house).maybeSingle(); if (h) winner_house_id = h.id; }
+    const { error } = await supabase.from("ball_results").upsert({ ball_id: ball.id, category_id: editResult.categoryId, winner_name: name, winner_profile_id, winner_house_name: house || null, winner_house_id }, { onConflict: "category_id" });
+    if (error) setErr("Couldn't save result: " + error.message);
+    setEditResult(null); setBusy(false); openBall(ball.id);
+  };
+  const clearResult = async (categoryId) => {
+    setBusy(true);
+    await supabase.from("ball_results").delete().eq("category_id", categoryId);
+    setBusy(false); openBall(ball.id);
+  };
+
   const addCategory = async () => {
     if (!newCat.name.trim() || busy) return;
     setBusy(true);
@@ -136,15 +174,47 @@ export default function Balls({ me, promptSignIn, goOnboard, openProfile }) {
     setBusy(false); openBall(ball.id);
   };
 
-  /* ---------- LIST ---------- */
+  /* ---------- LIST + STANDINGS ---------- */
   if (bview === "list") {
     return (
       <div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 12 }}>
-          <h1 style={{ fontWeight: 900, fontSize: 22, margin: 0 }}>Balls</h1>
-          <button onClick={() => { if (gate()) { setForm({ name: "", ball_date: "", location: "", description: "", flyer_url: null }); setErr(null); setBview("create"); } }} style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 700, fontSize: 13, background: `linear-gradient(135deg, ${C.magenta}, ${C.violet})`, color: C.ink, border: "none", borderRadius: 999, padding: "8px 14px", cursor: "pointer" }}><Plus size={16} strokeWidth={2.6} /> Create a ball</button>
+          <div style={{ display: "flex", alignItems: "center", gap: 4, background: C.panel, borderRadius: 999, padding: 3 }}>
+            <button onClick={() => setTab("balls")} style={{ fontWeight: 800, fontSize: 13.5, padding: "7px 16px", borderRadius: 999, border: "none", cursor: "pointer", color: tab === "balls" ? C.ink : C.muted, background: tab === "balls" ? C.gold : "transparent" }}>Balls</button>
+            <button onClick={() => { setTab("standings"); loadStandings(); }} style={{ fontWeight: 800, fontSize: 13.5, padding: "7px 16px", borderRadius: 999, border: "none", cursor: "pointer", color: tab === "standings" ? C.ink : C.muted, background: tab === "standings" ? C.gold : "transparent" }}>Standings</button>
+          </div>
+          {tab === "balls" && <button onClick={() => { if (gate()) { setForm({ name: "", ball_date: "", location: "", description: "", flyer_url: null }); setErr(null); setBview("create"); } }} style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 700, fontSize: 13, background: `linear-gradient(135deg, ${C.magenta}, ${C.violet})`, color: C.ink, border: "none", borderRadius: 999, padding: "8px 14px", cursor: "pointer" }}><Plus size={16} strokeWidth={2.6} /> Create a ball</button>}
         </div>
-        {loading ? <div style={{ color: C.muted, padding: 40, textAlign: "center" }}>Loading…</div>
+
+        {tab === "standings" ? (
+          standings === null ? <div style={{ color: C.muted, padding: 40, textAlign: "center" }}>Loading…</div>
+          : (standings.houses.length === 0 && standings.walkers.length === 0) ? <div style={{ border: `1px dashed ${C.border}`, borderRadius: 14, padding: 32, textAlign: "center", color: C.muted }}>No results recorded yet. Once organizers log category winners, standings build here.</div>
+          : (
+            <div style={{ display: "grid", gap: 22 }}>
+              <div>
+                <div style={{ fontWeight: 700, textTransform: "uppercase", fontSize: 11, letterSpacing: "0.16em", color: C.mutedDim, marginBottom: 10, display: "flex", alignItems: "center", gap: 7 }}><Trophy size={13} /> House standings</div>
+                {standings.houses.map((h, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderTop: `1px solid ${C.border}` }}>
+                    <span style={{ fontWeight: 900, fontSize: 15, color: i === 0 ? C.gold : C.mutedDim, minWidth: 22 }}>{i + 1}</span>
+                    <span style={{ flex: 1, fontWeight: 700, color: C.text }}>{h.name}</span>
+                    <span style={{ fontWeight: 800, color: C.gold }}>{h.wins} {h.wins === 1 ? "win" : "wins"}</span>
+                  </div>
+                ))}
+              </div>
+              <div>
+                <div style={{ fontWeight: 700, textTransform: "uppercase", fontSize: 11, letterSpacing: "0.16em", color: C.mutedDim, marginBottom: 10, display: "flex", alignItems: "center", gap: 7 }}><Trophy size={13} /> Top walkers</div>
+                {standings.walkers.map((w, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderTop: `1px solid ${C.border}` }}>
+                    <span style={{ fontWeight: 900, fontSize: 15, color: i === 0 ? C.gold : C.mutedDim, minWidth: 22 }}>{i + 1}</span>
+                    {w.username ? <button onClick={() => openProfile(w.username)} style={{ flex: 1, textAlign: "left", fontWeight: 700, color: C.text, background: "none", border: "none", cursor: "pointer", padding: 0 }}>{w.name}</button> : <span style={{ flex: 1, fontWeight: 700, color: C.text }}>{w.name}</span>}
+                    <span style={{ fontWeight: 800, color: C.gold }}>{w.wins} {w.wins === 1 ? "win" : "wins"}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )
+        ) : (
+          loading ? <div style={{ color: C.muted, padding: 40, textAlign: "center" }}>Loading…</div>
           : balls.length === 0 ? <div style={{ border: `1px dashed ${C.border}`, borderRadius: 14, padding: 32, textAlign: "center", color: C.muted }}>No balls yet. Build the first night.</div>
           : balls.map((b) => (
             <button key={b.id} onClick={() => openBall(b.id)} style={{ display: "flex", alignItems: "center", gap: 14, width: "100%", textAlign: "left", background: C.panel, border: `1px solid ${C.border}`, borderRadius: 14, padding: 14, marginBottom: 12, cursor: "pointer", opacity: isPast(b.ball_date) ? 0.62 : 1 }}>
@@ -161,7 +231,8 @@ export default function Balls({ me, promptSignIn, goOnboard, openProfile }) {
                 </div>
               </div>
             </button>
-          ))}
+          ))
+        )}
       </div>
     );
   }
@@ -225,25 +296,64 @@ export default function Balls({ me, promptSignIn, goOnboard, openProfile }) {
 
       {cats.length === 0 && !iAmOrganizer ? <div style={{ color: C.mutedDim, fontSize: 13.5 }}>No categories posted yet.</div> : null}
 
-      {cats.map((c, i) => (
-        <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 12, background: C.panel, border: `1px solid ${C.border}`, borderRadius: 12, padding: "12px 14px", marginBottom: 8 }}>
-          <div style={{ fontWeight: 900, fontSize: 16, color: C.gold, minWidth: 22, textAlign: "center" }}>{i + 1}</div>
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ fontWeight: 700, fontSize: 15, color: C.text }}>{c.name}</div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 2, flexWrap: "wrap" }}>
-              <span style={{ fontSize: 11.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: C.violet }}>{TYPE_LABEL[c.category_type]}</span>
-              {c.prize ? <span style={{ fontSize: 12.5, color: C.gold }}>· {c.prize}</span> : null}
+      {cats.map((c, i) => {
+        const res = results[c.id];
+        const isEditing = editResult && editResult.categoryId === c.id;
+        const winnerLabel = res ? (res.winner_username || res.winner_name) : null;
+        const houseLabel = res ? (res.winner_house_display || res.winner_house_name) : null;
+        return (
+          <div key={c.id} style={{ background: C.panel, border: `1px solid ${res ? C.gold + "55" : C.border}`, borderRadius: 12, padding: "12px 14px", marginBottom: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{ fontWeight: 900, fontSize: 16, color: C.gold, minWidth: 22, textAlign: "center" }}>{i + 1}</div>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ fontWeight: 700, fontSize: 15, color: C.text }}>{c.name}</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 2, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 11.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: C.violet }}>{TYPE_LABEL[c.category_type]}</span>
+                  {c.prize ? <span style={{ fontSize: 12.5, color: C.gold }}>· {c.prize}</span> : null}
+                </div>
+              </div>
+              {iAmOrganizer && (
+                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <button onClick={() => moveCategory(i, -1)} disabled={busy || i === 0} title="Move up" style={{ display: "flex", background: "none", border: "none", color: i === 0 ? C.mutedDim : C.muted, cursor: i === 0 ? "default" : "pointer", padding: 4 }}><ArrowUp size={16} /></button>
+                  <button onClick={() => moveCategory(i, 1)} disabled={busy || i === cats.length - 1} title="Move down" style={{ display: "flex", background: "none", border: "none", color: i === cats.length - 1 ? C.mutedDim : C.muted, cursor: i === cats.length - 1 ? "default" : "pointer", padding: 4 }}><ArrowDown size={16} /></button>
+                  <button onClick={() => removeCategory(c.id)} disabled={busy} title="Remove" style={{ display: "flex", background: "none", border: "none", color: C.mutedDim, cursor: "pointer", padding: 4 }}><Trash2 size={15} /></button>
+                </div>
+              )}
             </div>
+
+            {res && !isEditing && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.border}` }}>
+                <Trophy size={15} style={{ color: C.gold, flexShrink: 0 }} />
+                <span style={{ fontSize: 13.5, color: C.text, flex: 1, minWidth: 0 }}>
+                  {res.winner_username ? <button onClick={() => openProfile(res.winner_username)} style={{ fontWeight: 800, color: C.gold, background: "none", border: "none", cursor: "pointer", padding: 0 }}>{winnerLabel}</button> : <span style={{ fontWeight: 800, color: C.gold }}>{winnerLabel}</span>}
+                  {houseLabel ? <span style={{ color: C.muted }}> · {houseLabel}</span> : null}
+                </span>
+                {iAmOrganizer && (
+                  <>
+                    <button onClick={() => setEditResult({ categoryId: c.id, name: res.winner_name || res.winner_username || "", house: res.winner_house_name || res.winner_house_display || "" })} title="Edit" style={{ display: "flex", background: "none", border: "none", color: C.mutedDim, cursor: "pointer", padding: 3 }}><Pencil size={13} /></button>
+                    <button onClick={() => clearResult(c.id)} disabled={busy} title="Clear" style={{ display: "flex", background: "none", border: "none", color: C.mutedDim, cursor: "pointer", padding: 3 }}><Trash2 size={13} /></button>
+                  </>
+                )}
+              </div>
+            )}
+
+            {iAmOrganizer && !res && !isEditing && (
+              <button onClick={() => setEditResult({ categoryId: c.id, name: "", house: "" })} style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 10, fontWeight: 700, fontSize: 12.5, color: C.gold, background: "none", border: `1px solid ${C.gold}44`, borderRadius: 999, padding: "5px 12px", cursor: "pointer" }}><Trophy size={13} /> Record winner</button>
+            )}
+
+            {iAmOrganizer && isEditing && (
+              <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.border}` }}>
+                <input value={editResult.name} onChange={(e) => setEditResult({ ...editResult, name: e.target.value })} placeholder="Winner (their @username links their profile)" style={{ ...inputStyle, marginBottom: 8 }} autoFocus />
+                <input value={editResult.house} onChange={(e) => setEditResult({ ...editResult, house: e.target.value })} placeholder="House (optional)" style={{ ...inputStyle, marginBottom: 8 }} />
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                  <button onClick={() => setEditResult(null)} style={{ display: "flex", alignItems: "center", gap: 4, fontWeight: 600, fontSize: 12.5, background: "none", border: "none", color: C.muted, cursor: "pointer" }}><X size={14} /> cancel</button>
+                  <button onClick={saveResult} disabled={busy || !editResult.name.trim()} style={{ display: "flex", alignItems: "center", gap: 5, fontWeight: 700, fontSize: 12.5, background: `linear-gradient(135deg, ${C.magenta}, ${C.violet})`, color: C.ink, border: "none", borderRadius: 999, padding: "6px 14px", cursor: "pointer", opacity: busy || !editResult.name.trim() ? 0.6 : 1 }}><Check size={14} /> Save winner</button>
+                </div>
+              </div>
+            )}
           </div>
-          {iAmOrganizer && (
-            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-              <button onClick={() => moveCategory(i, -1)} disabled={busy || i === 0} title="Move up" style={{ display: "flex", background: "none", border: "none", color: i === 0 ? C.mutedDim : C.muted, cursor: i === 0 ? "default" : "pointer", padding: 4 }}><ArrowUp size={16} /></button>
-              <button onClick={() => moveCategory(i, 1)} disabled={busy || i === cats.length - 1} title="Move down" style={{ display: "flex", background: "none", border: "none", color: i === cats.length - 1 ? C.mutedDim : C.muted, cursor: i === cats.length - 1 ? "default" : "pointer", padding: 4 }}><ArrowDown size={16} /></button>
-              <button onClick={() => removeCategory(c.id)} disabled={busy} title="Remove" style={{ display: "flex", background: "none", border: "none", color: C.mutedDim, cursor: "pointer", padding: 4 }}><Trash2 size={15} /></button>
-            </div>
-          )}
-        </div>
-      ))}
+        );
+      })}
 
       {/* organizer: add category + ball controls */}
       {iAmOrganizer && (

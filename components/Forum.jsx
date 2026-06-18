@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { ChevronUp, ChevronDown, MessageCircle, Plus, Home, X, LogOut, Camera, Pencil, Users, Calendar, Search } from "lucide-react";
+import { ChevronUp, ChevronDown, MessageCircle, Plus, Home, X, LogOut, Camera, Pencil, Users, Calendar, Search, Trophy, Image as ImageIcon } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import Houses from "@/components/Houses";
 import Balls from "@/components/Balls";
@@ -173,7 +173,6 @@ export default function Forum() {
   const [comments, setComments] = useState([]);
   const [cVotes, setCVotes] = useState({});
   const [replyTo, setReplyTo] = useState(null);
-  const [replyText, setReplyText] = useState("");
   const [view, setView] = useState("feed");
   const [tagFilter, setTagFilter] = useState(null);
   const [query, setQuery] = useState("");
@@ -183,13 +182,15 @@ export default function Forum() {
   const [loading, setLoading] = useState(true);
   const [showSignIn, setShowSignIn] = useState(false);
   const [draft, setDraft] = useState({ title: "", body: "", tags: [], media_url: null, media_type: null, link_url: "" });
-  const [commentText, setCommentText] = useState("");
   const [profileData, setProfileData] = useState(null);
   const [email, setEmail] = useState("");
   const [linkSent, setLinkSent] = useState(false);
   const [authError, setAuthError] = useState(null);
   const [busy, setBusy] = useState(false);
   const [voteError, setVoteError] = useState(null);
+  const [inviteToken, setInviteToken] = useState(null);
+  const [inviteMsg, setInviteMsg] = useState(null);
+  const redeemed = useRef(false);
 
   const loadFeed = useCallback(async () => {
     const { data, error } = await supabase.from("post_feed").select("*").order("created_at", { ascending: false });
@@ -211,10 +212,14 @@ export default function Forum() {
 
   useEffect(() => {
     let active = true;
+    let tok = null;
+    try { tok = new URLSearchParams(window.location.search).get("invite"); } catch {}
+    if (tok) setInviteToken(tok);
     (async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!active) return;
       if (session && session.user) await hydrateUser(session.user);
+      else if (tok) setShowSignIn(true);
       await loadFeed();
     })();
     const { data: sub } = supabase.auth.onAuthStateChange(async (_e, session) => {
@@ -223,6 +228,19 @@ export default function Forum() {
     });
     return () => { active = false; sub.subscription.unsubscribe(); };
   }, [hydrateUser, loadFeed]);
+
+  useEffect(() => {
+    if (!me || !me.id || !inviteToken || redeemed.current) return;
+    redeemed.current = true;
+    (async () => {
+      const { error } = await supabase.rpc("redeem_invite", { invite_token: inviteToken });
+      try { const u = new URL(window.location.href); u.searchParams.delete("invite"); window.history.replaceState({}, "", u.pathname + u.search); } catch {}
+      setInviteToken(null);
+      if (error) setInviteMsg(/duplicate|unique|one_active|23505|already/i.test(error.message || "") ? "You're already in a house — leave it first to join a new one." : "That invite link isn't valid anymore.");
+      else { setInviteMsg("You're in! Welcome to the house."); if (me.onboarded) setView("houses"); }
+      setTimeout(() => setInviteMsg(null), 6000);
+    })();
+  }, [me, inviteToken]);
 
   const requireIdentity = () => { if (!me) { setShowSignIn(true); return false; } if (!me.onboarded) { setView("onboarding"); return false; } return true; };
 
@@ -278,13 +296,18 @@ export default function Forum() {
     } else setCVotes({});
   }, []);
   const openPost = async (id) => {
-    setSelectedId(id); setView("post"); setCommentText(""); setReplyTo(null); setReplyText(""); setComments([]);
+    setSelectedId(id); setView("post"); setReplyTo(null); setComments([]);
     await loadComments(id, me);
   };
   const openProfile = async (username) => {
     setView("profile"); setProfileData(null);
-    const { data } = await supabase.from("profiles").select("username,house,scene,bio,avatar_url,avatar_color").eq("username", username).single();
-    setProfileData(data || { username });
+    const { data } = await supabase.from("profiles").select("id,username,house,scene,bio,avatar_url,avatar_color").eq("username", username).single();
+    let trophies = [];
+    if (data && data.id) {
+      const { data: tr } = await supabase.from("ball_results_feed").select("category_name,ball_name,ball_date,winner_house_display,winner_house_name").eq("winner_profile_id", data.id).order("ball_date", { ascending: false });
+      trophies = tr || [];
+    }
+    setProfileData(data ? { ...data, trophies } : { username, trophies: [] });
   };
 
   const submitPost = async () => {
@@ -299,12 +322,13 @@ export default function Forum() {
     }
     setBusy(false);
   };
-  const submitComment = async (parentId, text) => {
-    if (!requireIdentity() || !text.trim() || !selectedId || busy) return;
+  const submitComment = async (parentId, text, imageUrl) => {
+    const body = (text || "").trim();
+    if (!requireIdentity() || (!body && !imageUrl) || !selectedId || busy) return;
     setBusy(true);
-    const { error } = await supabase.from("comments").insert({ post_id: selectedId, author_id: me.id, body: text.trim(), parent_id: parentId || null });
+    const { error } = await supabase.from("comments").insert({ post_id: selectedId, author_id: me.id, body: body || null, image_url: imageUrl || null, parent_id: parentId || null });
     if (!error) {
-      if (parentId) { setReplyTo(null); setReplyText(""); } else setCommentText("");
+      if (parentId) setReplyTo(null);
       await loadComments(selectedId, me);
       setPosts((prev) => prev.map((p) => (p.id === selectedId ? { ...p, comment_count: (p.comment_count || 0) + 1 } : p)));
     }
@@ -381,7 +405,7 @@ export default function Forum() {
                 {view === "feed" && <Feed visible={visible} sort={sort} setSort={setSort} query={query} setQuery={setQuery} tagFilter={tagFilter} setTagFilter={setTagFilter} votes={votes} applyVote={applyVote} openPost={openPost} openProfile={openProfile} onTag={filterByTag} />}
                 {view === "houses" && <Houses me={me} promptSignIn={() => setShowSignIn(true)} goOnboard={() => setView("onboarding")} openProfile={openProfile} />}
                 {view === "balls" && <Balls me={me} promptSignIn={() => setShowSignIn(true)} goOnboard={() => setView("onboarding")} openProfile={openProfile} />}
-                {view === "post" && selected && <PostDetail post={selected} comments={comments} cVotes={cVotes} voteComment={voteComment} vote={votes[selected.id]} applyVote={applyVote} back={() => setView("feed")} openProfile={openProfile} onTag={filterByTag} me={me} commentText={commentText} setCommentText={setCommentText} submitComment={submitComment} replyTo={replyTo} setReplyTo={setReplyTo} replyText={replyText} setReplyText={setReplyText} promptSignIn={() => setShowSignIn(true)} goOnboard={() => setView("onboarding")} inputStyle={inputStyle} busy={busy} />}
+                {view === "post" && selected && <PostDetail post={selected} comments={comments} cVotes={cVotes} voteComment={voteComment} vote={votes[selected.id]} applyVote={applyVote} back={() => setView("feed")} openProfile={openProfile} onTag={filterByTag} me={me} submitComment={submitComment} replyTo={replyTo} setReplyTo={setReplyTo} promptSignIn={() => setShowSignIn(true)} goOnboard={() => setView("onboarding")} busy={busy} />}
                 {view === "profile" && profileData && <Profile profile={profileData} posts={posts} openPost={openPost} back={() => setView("feed")} isMe={!!(me && me.username && me.username === profileData.username)} onEdit={() => setView("edit")} />}
                 {view === "create" && me && <Create draft={draft} setDraft={setDraft} submitPost={submitPost} back={() => setView("feed")} inputStyle={inputStyle} busy={busy} me={me} />}
               </>
@@ -390,6 +414,7 @@ export default function Forum() {
       </div>
 
       {voteError && <div style={{ position: "fixed", bottom: 90, left: "50%", transform: "translateX(-50%)", zIndex: 40, background: C.panel, border: `1px solid ${C.magenta}`, color: C.text, borderRadius: 10, padding: "10px 16px", fontSize: 13, maxWidth: "90%" }}>{voteError}</div>}
+      {inviteMsg && <div style={{ position: "fixed", bottom: 90, left: "50%", transform: "translateX(-50%)", zIndex: 40, background: C.panel, border: `1px solid ${C.gold}`, color: C.text, borderRadius: 10, padding: "10px 16px", fontSize: 13.5, fontWeight: 600, maxWidth: "90%", textAlign: "center" }}>{inviteMsg}</div>}
 
       {showSignIn && (
         <div style={{ position: "fixed", inset: 0, zIndex: 30, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, background: "rgba(8,6,14,0.7)" }} onClick={() => { setShowSignIn(false); setLinkSent(false); setAuthError(null); }}>
@@ -493,21 +518,41 @@ function PostCard({ post, vote, applyVote, openPost, openProfile, onTag }) {
   );
 }
 
-function ReplyComposer({ value, setValue, onSubmit, onCancel, busy, placeholder }) {
-  const inputStyle = { background: C.ink, border: `1px solid ${C.border}`, borderRadius: 10, color: C.text, padding: "9px 11px", width: "100%", outline: "none", fontSize: 13.5, resize: "vertical" };
+function CommentComposer({ me, onSubmit, busy, placeholder, submitLabel = "Reply", onCancel, compact }) {
+  const [text, setText] = useState("");
+  const [img, setImg] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef(null);
+  const inputStyle = { background: C.ink, border: `1px solid ${C.border}`, borderRadius: 10, color: C.text, padding: compact ? "9px 11px" : "10px 12px", width: "100%", outline: "none", fontSize: compact ? 13.5 : 14, resize: "vertical" };
+  const pick = async (e) => {
+    const file = e.target.files && e.target.files[0]; if (!file) return;
+    setUploading(true);
+    const ext = (file.name.split(".").pop() || "gif").toLowerCase();
+    const path = `comment/${me.id}/${Date.now()}.${ext}`;
+    const { error } = await supabase.storage.from("media").upload(path, file, { upsert: true, cacheControl: "3600" });
+    if (!error) { const { data } = supabase.storage.from("media").getPublicUrl(path); setImg(data.publicUrl); }
+    setUploading(false);
+  };
+  const canSend = (text.trim() || img) && !busy && !uploading;
+  const send = () => { if (!canSend) return; onSubmit(text, img); setText(""); setImg(null); };
   return (
     <div style={{ marginTop: 8 }}>
-      <textarea value={value} onChange={(e) => setValue(e.target.value)} placeholder={placeholder} rows={2} style={inputStyle} autoFocus />
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 6 }}>
-        <button onClick={onCancel} style={{ fontWeight: 600, fontSize: 12.5, background: "none", border: "none", color: C.muted, cursor: "pointer" }}>cancel</button>
-        <button onClick={onSubmit} disabled={busy} style={{ fontWeight: 700, fontSize: 12.5, background: `linear-gradient(135deg, ${C.magenta}, ${C.violet})`, color: C.ink, borderRadius: 999, padding: "6px 14px", border: "none", cursor: "pointer", opacity: busy ? 0.6 : 1 }}>Reply</button>
+      <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder={placeholder} rows={compact ? 2 : 3} style={inputStyle} autoFocus={!!onCancel} />
+      {img && <div style={{ marginTop: 8, position: "relative", display: "inline-block" }}><img src={img} alt="" style={{ maxHeight: 160, borderRadius: 10, display: "block" }} /><button onClick={() => setImg(null)} style={{ position: "absolute", top: 6, right: 6, background: "rgba(0,0,0,0.6)", border: "none", color: "#fff", borderRadius: 999, width: 24, height: 24, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><X size={14} /></button></div>}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 8 }}>
+        <input ref={fileRef} type="file" accept="image/*" onChange={pick} style={{ display: "none" }} />
+        <button onClick={() => fileRef.current && fileRef.current.click()} disabled={uploading} style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 700, fontSize: 12.5, background: C.panel2, color: C.muted, border: `1px solid ${C.border}`, borderRadius: 999, padding: "6px 12px", cursor: "pointer" }}><ImageIcon size={14} /> {uploading ? "Uploading…" : "Meme / GIF"}</button>
+        <div style={{ display: "flex", gap: 8 }}>
+          {onCancel && <button onClick={onCancel} style={{ fontWeight: 600, fontSize: 12.5, background: "none", border: "none", color: C.muted, cursor: "pointer" }}>cancel</button>}
+          <button onClick={send} disabled={!canSend} style={{ fontWeight: 700, fontSize: 12.5, background: `linear-gradient(135deg, ${C.magenta}, ${C.violet})`, color: C.ink, borderRadius: 999, padding: "6px 16px", border: "none", cursor: canSend ? "pointer" : "not-allowed", opacity: canSend ? 1 : 0.5 }}>{submitLabel}</button>
+        </div>
       </div>
     </div>
   );
 }
 
-function CommentNode({ node, depth, cVotes, voteComment, me, replyTo, setReplyTo, replyText, setReplyText, submitComment, openProfile, promptSignIn, goOnboard, busy }) {
-  const startReply = () => { if (!me) return promptSignIn(); if (!me.onboarded) return goOnboard(); setReplyText(""); setReplyTo(node.id); };
+function CommentNode({ node, depth, cVotes, voteComment, me, replyTo, setReplyTo, submitComment, openProfile, promptSignIn, goOnboard, busy }) {
+  const startReply = () => { if (!me) return promptSignIn(); if (!me.onboarded) return goOnboard(); setReplyTo(node.id); };
   const wrapMargin = depth === 0 ? 0 : depth < 6 ? 14 : 4;
   return (
     <div>
@@ -518,27 +563,27 @@ function CommentNode({ node, depth, cVotes, voteComment, me, replyTo, setReplyTo
           {node.author_house ? <span style={{ color: C.violet, fontWeight: 600 }}>· {node.author_house}</span> : null}
           <span style={{ color: C.mutedDim }}>· {timeAgo(node.created_at)}</span>
         </div>
-        <p style={{ color: C.text, fontSize: 14, lineHeight: 1.55, margin: "0 0 7px", whiteSpace: "pre-wrap" }}>{node.body}</p>
+        {node.body ? <p style={{ color: C.text, fontSize: 14, lineHeight: 1.55, margin: "0 0 7px", whiteSpace: "pre-wrap" }}>{node.body}</p> : null}
+        {node.image_url ? <img src={node.image_url} alt="" style={{ maxHeight: 260, maxWidth: "100%", borderRadius: 10, margin: "0 0 8px", display: "block", border: `1px solid ${C.border}` }} /> : null}
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
           <CommentVote score={node.score} vote={cVotes[node.id]} onUp={() => voteComment(node.id, "up")} onDown={() => voteComment(node.id, "down")} />
           <button onClick={startReply} style={{ fontWeight: 700, fontSize: 12.5, color: C.muted, background: "none", border: "none", cursor: "pointer", padding: 0 }}>Reply</button>
         </div>
-        {replyTo === node.id && <ReplyComposer value={replyText} setValue={setReplyText} onSubmit={() => submitComment(node.id, replyText)} onCancel={() => setReplyTo(null)} busy={busy} placeholder={"Reply to " + (node.author || "this")} />}
+        {replyTo === node.id && <CommentComposer me={me} onSubmit={(t, img) => submitComment(node.id, t, img)} onCancel={() => setReplyTo(null)} busy={busy} placeholder={"Reply to " + (node.author || "this")} compact />}
       </div>
       {node.children && node.children.length > 0 && (
         <div style={{ marginLeft: wrapMargin, borderLeft: `1px solid ${C.border}`, paddingLeft: 10 }}>
-          {node.children.map((child) => <CommentNode key={child.id} node={child} depth={depth + 1} cVotes={cVotes} voteComment={voteComment} me={me} replyTo={replyTo} setReplyTo={setReplyTo} replyText={replyText} setReplyText={setReplyText} submitComment={submitComment} openProfile={openProfile} promptSignIn={promptSignIn} goOnboard={goOnboard} busy={busy} />)}
+          {node.children.map((child) => <CommentNode key={child.id} node={child} depth={depth + 1} cVotes={cVotes} voteComment={voteComment} me={me} replyTo={replyTo} setReplyTo={setReplyTo} submitComment={submitComment} openProfile={openProfile} promptSignIn={promptSignIn} goOnboard={goOnboard} busy={busy} />)}
         </div>
       )}
     </div>
   );
 }
 
-function PostDetail({ post, comments, cVotes, voteComment, vote, applyVote, back, openProfile, onTag, me, commentText, setCommentText, submitComment, replyTo, setReplyTo, replyText, setReplyText, promptSignIn, goOnboard, inputStyle, busy }) {
+function PostDetail({ post, comments, cVotes, voteComment, vote, applyVote, back, openProfile, onTag, me, submitComment, replyTo, setReplyTo, promptSignIn, goOnboard, busy }) {
   const tree = useMemo(() => buildTree(comments), [comments]);
   const canReply = me && me.onboarded;
-  const topAction = !me ? promptSignIn : !me.onboarded ? goOnboard : () => submitComment(null, commentText);
-  const topLabel = !me ? "Sign in to reply" : !me.onboarded ? "Finish your profile to reply" : "Reply";
+  const topLabel = !me ? "Sign in to reply" : "Finish your profile to reply";
   return (
     <div>
       <button onClick={back} style={{ fontWeight: 600, marginBottom: 16, color: C.muted, fontSize: 13, background: "none", border: "none", cursor: "pointer", padding: 0 }}>← back</button>
@@ -560,10 +605,11 @@ function PostDetail({ post, comments, cVotes, voteComment, vote, applyVote, back
       </div>
       <div style={{ marginTop: 20, marginBottom: 12, fontWeight: 700, textTransform: "uppercase", fontSize: 11, letterSpacing: "0.16em", color: C.mutedDim }}>{comments.length} {comments.length === 1 ? "reply" : "replies"}</div>
       <div style={{ marginBottom: 14 }}>
-        <textarea value={commentText} onChange={(e) => setCommentText(e.target.value)} placeholder={canReply ? "Add your reply…" : topLabel} disabled={!canReply} rows={3} style={{ ...inputStyle, resize: "vertical", opacity: canReply ? 1 : 0.6 }} />
-        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}><button onClick={topAction} disabled={busy} style={{ fontWeight: 700, background: `linear-gradient(135deg, ${C.magenta}, ${C.violet})`, color: C.ink, borderRadius: 999, padding: "8px 18px", fontSize: 13, border: "none", cursor: "pointer", opacity: busy ? 0.6 : 1 }}>{topLabel}</button></div>
+        {canReply
+          ? <CommentComposer me={me} onSubmit={(t, img) => submitComment(null, t, img)} busy={busy} placeholder="Add your reply…" submitLabel="Reply" />
+          : <button onClick={!me ? promptSignIn : goOnboard} style={{ fontWeight: 700, background: C.panel2, color: C.text, border: `1px solid ${C.border}`, borderRadius: 999, padding: "10px 18px", fontSize: 13, cursor: "pointer" }}>{topLabel}</button>}
       </div>
-      {tree.map((node) => <CommentNode key={node.id} node={node} depth={0} cVotes={cVotes} voteComment={voteComment} me={me} replyTo={replyTo} setReplyTo={setReplyTo} replyText={replyText} setReplyText={setReplyText} submitComment={submitComment} openProfile={openProfile} promptSignIn={promptSignIn} goOnboard={goOnboard} busy={busy} />)}
+      {tree.map((node) => <CommentNode key={node.id} node={node} depth={0} cVotes={cVotes} voteComment={voteComment} me={me} replyTo={replyTo} setReplyTo={setReplyTo} submitComment={submitComment} openProfile={openProfile} promptSignIn={promptSignIn} goOnboard={goOnboard} busy={busy} />)}
     </div>
   );
 }
@@ -572,6 +618,7 @@ function Profile({ profile, posts, openPost, back, isMe, onEdit }) {
   const theirs = posts.filter((p) => p.author === profile.username);
   const total = theirs.reduce((s, p) => s + p.score, 0);
   const sl = sceneLabel(profile.scene);
+  const trophies = profile.trophies || [];
   return (
     <div>
       <button onClick={back} style={{ fontWeight: 600, marginBottom: 16, color: C.muted, fontSize: 13, background: "none", border: "none", cursor: "pointer", padding: 0 }}>← back</button>
@@ -588,8 +635,27 @@ function Profile({ profile, posts, openPost, back, isMe, onEdit }) {
           {isMe && <button onClick={onEdit} style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 700, fontSize: 13, background: C.panel2, color: C.text, border: `1px solid ${C.border}`, borderRadius: 999, padding: "8px 14px", cursor: "pointer", alignSelf: "flex-start" }}><Pencil size={14} /> Edit</button>}
         </div>
         {profile.bio ? <p style={{ color: C.text, fontSize: 14.5, lineHeight: 1.6, margin: "16px 0 0" }}>{profile.bio}</p> : null}
-        <div style={{ color: C.muted, fontSize: 13, marginTop: 14 }}>{theirs.length} posts · {total} upvotes</div>
+        <div style={{ color: C.muted, fontSize: 13, marginTop: 14, display: "flex", gap: 14, flexWrap: "wrap" }}>
+          <span>{theirs.length} posts · {total} upvotes</span>
+          {trophies.length ? <span style={{ display: "inline-flex", alignItems: "center", gap: 5, color: C.gold, fontWeight: 700 }}><Trophy size={13} /> {trophies.length} {trophies.length === 1 ? "win" : "wins"}</span> : null}
+        </div>
       </div>
+
+      {trophies.length > 0 && (
+        <>
+          <div style={{ marginTop: 20, marginBottom: 12, fontWeight: 700, textTransform: "uppercase", fontSize: 11, letterSpacing: "0.16em", color: C.mutedDim, display: "flex", alignItems: "center", gap: 7 }}><Trophy size={13} /> Trophies</div>
+          {trophies.map((t, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, background: C.panel, border: `1px solid ${C.gold}33`, borderRadius: 12, padding: "11px 14px", marginBottom: 8 }}>
+              <Trophy size={17} style={{ color: C.gold, flexShrink: 0 }} />
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ fontWeight: 700, fontSize: 14.5, color: C.text }}>{t.category_name}</div>
+                <div style={{ fontSize: 12.5, color: C.muted, marginTop: 2 }}>{t.ball_name}{t.winner_house_display || t.winner_house_name ? " · " + (t.winner_house_display || t.winner_house_name) : ""}</div>
+              </div>
+            </div>
+          ))}
+        </>
+      )}
+
       <div style={{ marginTop: 20, marginBottom: 12, fontWeight: 700, textTransform: "uppercase", fontSize: 11, letterSpacing: "0.16em", color: C.mutedDim }}>Posts</div>
       {theirs.length === 0 ? <div style={{ color: C.muted, fontSize: 14 }}>No posts yet.</div>
         : theirs.map((p) => (

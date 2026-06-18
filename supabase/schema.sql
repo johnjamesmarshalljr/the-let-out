@@ -47,6 +47,8 @@ create table if not exists public.comments (
   created_at timestamptz not null default now()
 );
 alter table public.comments add column if not exists parent_id uuid references public.comments(id) on delete cascade;
+alter table public.comments add column if not exists image_url text;  -- memes / gifs / images on comments
+alter table public.comments alter column body drop not null;          -- a comment can be image-only
 
 -- ---------- VOTES (posts) ----------
 create table if not exists public.votes (
@@ -173,7 +175,7 @@ join public.profiles pr on pr.id = p.author_id;
 drop view if exists public.comment_feed;
 create view public.comment_feed as
 select
-  c.id, c.post_id, c.parent_id, c.body, c.created_at, c.author_id,
+  c.id, c.post_id, c.parent_id, c.body, c.image_url, c.created_at, c.author_id,
   pr.username as author, pr.house as author_house, pr.avatar_url as author_avatar, pr.avatar_color as author_color,
   coalesce((select sum(cv.value) from public.comment_votes cv where cv.comment_id = c.id), 0) as score
 from public.comments c
@@ -205,6 +207,11 @@ create table if not exists public.house_memberships (
 );
 -- a person can be an ACTIVE member of only one house at a time (you rep one house)
 create unique index if not exists house_one_active on public.house_memberships (user_id) where status = 'active';
+-- free-text title (e.g. Mother, Father, Member) + a permission flag for leaders
+alter table public.house_memberships add column if not exists title     text;
+alter table public.house_memberships add column if not exists is_leader boolean not null default false;
+update public.house_memberships set is_leader = true where role in ('founder', 'parent') and is_leader = false;
+update public.house_memberships set title = (case role when 'founder' then 'Founder' when 'parent' then 'Parent' else 'Member' end) where title is null;
 
 create table if not exists public.house_messages (
   id         uuid primary key default gen_random_uuid(),
@@ -221,7 +228,7 @@ returns boolean language sql security definer set search_path = public stable as
 $$;
 create or replace function public.is_house_leader(h uuid, u uuid)
 returns boolean language sql security definer set search_path = public stable as $$
-  select exists (select 1 from public.house_memberships m where m.house_id = h and m.user_id = u and m.status = 'active' and m.role in ('founder', 'parent'));
+  select exists (select 1 from public.house_memberships m where m.house_id = h and m.user_id = u and m.status = 'active' and m.is_leader = true);
 $$;
 
 alter table public.houses           enable row level security;
@@ -240,9 +247,13 @@ drop policy if exists "hm insert" on public.house_memberships;
 drop policy if exists "hm update" on public.house_memberships;
 drop policy if exists "hm delete" on public.house_memberships;
 create policy "hm read" on public.house_memberships for select using (true);
--- request to join as yourself (child/pending), OR be the house founder bootstrapping yourself in
+-- request to join as yourself (pending), OR the founder bootstrapping in, OR a leader adding someone to their house
 create policy "hm insert" on public.house_memberships for insert to authenticated
-  with check (auth.uid() = user_id and ((role = 'child' and status = 'pending') or auth.uid() = (select founder_id from public.houses where id = house_id)));
+  with check (
+    (auth.uid() = user_id and status = 'pending')
+    or (auth.uid() = user_id and auth.uid() = (select founder_id from public.houses where id = house_id))
+    or public.is_house_leader(house_id, auth.uid())
+  );
 -- leaders approve/promote; (a leader updates rows in their house)
 create policy "hm update" on public.house_memberships for update to authenticated using (public.is_house_leader(house_id, auth.uid()));
 -- leaders remove members; or you remove yourself (leave)
@@ -276,6 +287,34 @@ create policy "he insert" on public.house_events for insert to authenticated wit
 create policy "he delete" on public.house_events for delete to authenticated using (auth.uid() = created_by or public.is_house_leader(house_id, auth.uid()));
 grant select, insert, delete on public.house_events to authenticated;
 
+-- invite links: a leader generates a token, anyone with the link joins as an active member
+create table if not exists public.house_invites (
+  token      text primary key default gen_random_uuid()::text,
+  house_id   uuid not null references public.houses(id) on delete cascade,
+  created_by uuid not null references public.profiles(id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+alter table public.house_invites enable row level security;
+drop policy if exists "hi insert" on public.house_invites;
+drop policy if exists "hi read"   on public.house_invites;
+create policy "hi insert" on public.house_invites for insert to authenticated with check (auth.uid() = created_by and public.is_house_leader(house_id, auth.uid()));
+create policy "hi read"   on public.house_invites for select using (public.is_house_leader(house_id, auth.uid()));
+grant select, insert on public.house_invites to authenticated;
+
+-- redeem an invite: joins the current user to the invite's house as an active member
+create or replace function public.redeem_invite(invite_token text)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare hid uuid;
+begin
+  select house_id into hid from public.house_invites where token = invite_token;
+  if hid is null then raise exception 'invalid_invite'; end if;
+  insert into public.house_memberships (house_id, user_id, status, title, is_leader)
+    values (hid, auth.uid(), 'active', 'Member', false)
+    on conflict (house_id, user_id) do update set status = 'active';
+  return hid;
+end; $$;
+grant execute on function public.redeem_invite(text) to authenticated;
+
 -- house views
 drop view if exists public.houses_directory;
 create view public.houses_directory as
@@ -284,7 +323,7 @@ from public.houses h;
 
 drop view if exists public.house_members;
 create view public.house_members as
-select m.house_id, m.user_id, m.role, m.status, m.created_at,
+select m.house_id, m.user_id, m.role, m.status, m.created_at, m.title, m.is_leader,
   pr.username, pr.avatar_url, pr.avatar_color
 from public.house_memberships m
 join public.profiles pr on pr.id = m.user_id;
@@ -355,6 +394,46 @@ from public.balls b
 join public.profiles pr on pr.id = b.organizer_id;
 
 grant select on public.balls_directory to anon, authenticated;
+
+-- ============================================================
+--  BALL RESULTS (the system of record — wins accrue to people & houses)
+-- ============================================================
+create table if not exists public.ball_results (
+  id                uuid primary key default gen_random_uuid(),
+  ball_id           uuid not null references public.balls(id) on delete cascade,
+  category_id       uuid not null references public.ball_categories(id) on delete cascade,
+  winner_profile_id uuid references public.profiles(id) on delete set null,
+  winner_name       text,            -- free-text walker name when they aren't a member
+  winner_house_id   uuid references public.houses(id) on delete set null,
+  winner_house_name text,            -- free-text house when it isn't a Let Out house
+  created_at        timestamptz not null default now(),
+  unique (category_id)               -- one recorded winner per category (MVP)
+);
+alter table public.ball_results enable row level security;
+drop policy if exists "br read"   on public.ball_results;
+drop policy if exists "br insert" on public.ball_results;
+drop policy if exists "br update" on public.ball_results;
+drop policy if exists "br delete" on public.ball_results;
+create policy "br read"   on public.ball_results for select using (true);
+create policy "br insert" on public.ball_results for insert to authenticated with check (public.is_ball_organizer(ball_id, auth.uid()));
+create policy "br update" on public.ball_results for update to authenticated using (public.is_ball_organizer(ball_id, auth.uid()));
+create policy "br delete" on public.ball_results for delete to authenticated using (public.is_ball_organizer(ball_id, auth.uid()));
+grant select on public.ball_results to anon, authenticated;
+grant insert, update, delete on public.ball_results to authenticated;
+
+drop view if exists public.ball_results_feed;
+create view public.ball_results_feed as
+select r.id, r.ball_id, r.category_id, r.winner_profile_id, r.winner_name, r.winner_house_id, r.winner_house_name, r.created_at,
+  c.name as category_name, c.category_type, c.position,
+  b.name as ball_name, b.ball_date,
+  pr.username as winner_username, pr.avatar_url as winner_avatar, pr.avatar_color as winner_color,
+  h.name as winner_house_display, h.logo_url as winner_house_logo
+from public.ball_results r
+join public.ball_categories c on c.id = r.category_id
+join public.balls b on b.id = r.ball_id
+left join public.profiles pr on pr.id = r.winner_profile_id
+left join public.houses   h  on h.id = r.winner_house_id;
+grant select on public.ball_results_feed to anon, authenticated;
 
 -- ============================================================
 --  Done.
