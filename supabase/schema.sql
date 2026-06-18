@@ -34,6 +34,9 @@ create table if not exists public.posts (
 alter table public.posts add column if not exists media_url  text;
 alter table public.posts add column if not exists media_type text;  -- 'image' | 'video'
 alter table public.posts add column if not exists link_url   text;  -- embedded clip: YouTube, TikTok, Instagram, etc.
+alter table public.posts add column if not exists tags       text[] not null default '{}';  -- replaces single category
+alter table public.posts alter column category drop not null;
+update public.posts set tags = array[category] where (tags is null or tags = '{}') and category is not null;
 
 -- ---------- COMMENTS (threaded via parent_id) ----------
 create table if not exists public.comments (
@@ -160,7 +163,7 @@ drop view if exists public.post_feed;
 create view public.post_feed as
 select
   p.id, p.category, p.title, p.body, p.created_at, p.author_id,
-  p.media_url, p.media_type, p.link_url,
+  p.media_url, p.media_type, p.link_url, p.tags,
   pr.username as author, pr.house as author_house, pr.avatar_url as author_avatar, pr.avatar_color as author_color,
   coalesce((select sum(v.value) from public.votes v where v.post_id = p.id), 0) as score,
   (select count(*) from public.comments c where c.post_id = p.id) as comment_count
@@ -253,6 +256,25 @@ create policy "hmsg insert" on public.house_messages for insert to authenticated
 grant select on public.houses, public.house_memberships to anon, authenticated;
 grant insert, update, delete on public.houses, public.house_memberships to authenticated;
 grant select, insert on public.house_messages to authenticated;
+
+-- house calendar (practices, meetings, etc. — members only)
+create table if not exists public.house_events (
+  id         uuid primary key default gen_random_uuid(),
+  house_id   uuid not null references public.houses(id) on delete cascade,
+  title      text not null,
+  event_date timestamptz not null,
+  note       text,
+  created_by uuid not null references public.profiles(id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+alter table public.house_events enable row level security;
+drop policy if exists "he read"   on public.house_events;
+drop policy if exists "he insert" on public.house_events;
+drop policy if exists "he delete" on public.house_events;
+create policy "he read"   on public.house_events for select using (public.is_house_member(house_id, auth.uid()));
+create policy "he insert" on public.house_events for insert to authenticated with check (auth.uid() = created_by and public.is_house_member(house_id, auth.uid()));
+create policy "he delete" on public.house_events for delete to authenticated using (auth.uid() = created_by or public.is_house_leader(house_id, auth.uid()));
+grant select, insert, delete on public.house_events to authenticated;
 
 -- house views
 drop view if exists public.houses_directory;

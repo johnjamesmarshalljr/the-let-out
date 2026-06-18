@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { Plus, Camera, MapPin, Crown, X, Check, UserMinus, ArrowUp } from "lucide-react";
+import { Plus, Camera, MapPin, Crown, X, Check, UserMinus, ArrowUp, Calendar, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 
 const C = {
@@ -18,6 +18,10 @@ function timeAgo(iso) {
   if (s < 86400) return Math.floor(s / 3600) + "h";
   if (s < 604800) return Math.floor(s / 86400) + "d";
   return Math.floor(s / 604800) + "w";
+}
+function fmtEvent(iso) {
+  try { return new Date(iso).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }); }
+  catch { return iso; }
 }
 
 function Avatar({ name, url, color, size = 32 }) {
@@ -49,6 +53,8 @@ export default function Houses({ me, promptSignIn, goOnboard, openProfile }) {
   const [house, setHouse] = useState(null);
   const [members, setMembers] = useState([]);
   const [messages, setMessages] = useState([]);
+  const [events, setEvents] = useState([]);
+  const [evt, setEvt] = useState({ title: "", date: "", note: "" });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
   const [msgText, setMsgText] = useState("");
@@ -75,7 +81,7 @@ export default function Houses({ me, promptSignIn, goOnboard, openProfile }) {
   useEffect(() => { loadHouses(); loadMyActive(); }, [loadHouses, loadMyActive]);
 
   const openHouse = useCallback(async (id) => {
-    setHview("detail"); setHouse(null); setMembers([]); setMessages([]); setMsgText(""); setErr(null);
+    setHview("detail"); setHouse(null); setMembers([]); setMessages([]); setEvents([]); setMsgText(""); setErr(null);
     const { data: h } = await supabase.from("houses_directory").select("*").eq("id", id).single();
     setHouse(h);
     const { data: m } = await supabase.from("house_members").select("*").eq("house_id", id).order("created_at", { ascending: true });
@@ -88,6 +94,8 @@ export default function Houses({ me, promptSignIn, goOnboard, openProfile }) {
         // attach author info from members list
         const byId = {}; (m || []).forEach((x) => (byId[x.user_id] = x));
         setMessages((msgs || []).map((x) => ({ ...x, author: byId[x.author_id] })));
+        const { data: evs } = await supabase.from("house_events").select("*").eq("house_id", id).order("event_date", { ascending: true });
+        setEvents(evs || []);
       }
     }
   }, [me]);
@@ -157,6 +165,18 @@ export default function Houses({ me, promptSignIn, goOnboard, openProfile }) {
     const { error } = await supabase.from("house_messages").insert({ house_id: house.id, author_id: me.id, body: msgText.trim() });
     if (!error) { setMsgText(""); openHouse(house.id); }
     setBusy(false);
+  };
+  const addEvent = async () => {
+    if (!evt.title.trim() || !evt.date || busy) return;
+    setBusy(true);
+    const { error } = await supabase.from("house_events").insert({ house_id: house.id, title: evt.title.trim(), event_date: new Date(evt.date).toISOString(), note: evt.note.trim() || null, created_by: me.id });
+    if (!error) { setEvt({ title: "", date: "", note: "" }); openHouse(house.id); }
+    setBusy(false);
+  };
+  const deleteEvent = async (id) => {
+    setBusy(true);
+    await supabase.from("house_events").delete().eq("id", id);
+    setBusy(false); openHouse(house.id);
   };
 
   /* ---------- LIST ---------- */
@@ -280,6 +300,41 @@ export default function Houses({ me, promptSignIn, goOnboard, openProfile }) {
           </div>
         ))}
       </div>
+
+      {/* calendar */}
+      {iAmActive && (
+        <div style={{ marginTop: 26 }}>
+          <div style={{ fontWeight: 700, textTransform: "uppercase", fontSize: 11, letterSpacing: "0.16em", color: C.mutedDim, marginBottom: 10, display: "flex", alignItems: "center", gap: 7 }}><Calendar size={13} /> Calendar <span style={{ color: C.mutedDim, textTransform: "none", letterSpacing: 0, fontWeight: 600 }}>· practices & events</span></div>
+          <div style={{ background: C.panel, border: `1px dashed ${C.border}`, borderRadius: 12, padding: 14, marginBottom: 14 }}>
+            <input value={evt.title} onChange={(e) => setEvt({ ...evt, title: e.target.value })} placeholder="What's happening (e.g. Thursday practice)" style={{ ...inputStyle, marginBottom: 10 }} />
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+              <input type="datetime-local" value={evt.date} onChange={(e) => setEvt({ ...evt, date: e.target.value })} style={{ ...inputStyle, flex: 1, minWidth: 180 }} />
+              <input value={evt.note} onChange={(e) => setEvt({ ...evt, note: e.target.value })} placeholder="Note (optional)" style={{ ...inputStyle, flex: 1, minWidth: 150 }} />
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <button onClick={addEvent} disabled={busy || !evt.title.trim() || !evt.date} style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 700, fontSize: 13, background: `linear-gradient(135deg, ${C.magenta}, ${C.violet})`, color: C.ink, border: "none", borderRadius: 999, padding: "8px 16px", cursor: "pointer", opacity: busy || !evt.title.trim() || !evt.date ? 0.6 : 1 }}><Plus size={15} strokeWidth={2.6} /> Add to calendar</button>
+            </div>
+          </div>
+          {events.length === 0 ? <div style={{ color: C.mutedDim, fontSize: 13 }}>Nothing scheduled yet.</div>
+            : events.map((ev) => {
+              const past = new Date(ev.event_date) < new Date();
+              return (
+                <div key={ev.id} style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "11px 0", borderTop: `1px solid ${C.border}`, opacity: past ? 0.55 : 1 }}>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", width: 46, height: 46, borderRadius: 10, background: C.panel2, border: `1px solid ${C.border}`, flexShrink: 0 }}>
+                    <span style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", color: C.magenta }}>{new Date(ev.event_date).toLocaleString(undefined, { month: "short" })}</span>
+                    <span style={{ fontSize: 17, fontWeight: 900, color: C.text, lineHeight: 1 }}>{new Date(ev.event_date).getDate()}</span>
+                  </div>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ fontWeight: 700, fontSize: 14.5, color: C.text }}>{ev.title}</div>
+                    <div style={{ fontSize: 12.5, color: C.muted, marginTop: 2 }}>{fmtEvent(ev.event_date)}</div>
+                    {ev.note ? <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>{ev.note}</div> : null}
+                  </div>
+                  {(ev.created_by === me.id || iAmLeader) && <button onClick={() => deleteEvent(ev.id)} disabled={busy} title="Remove" style={{ display: "flex", background: "none", border: "none", color: C.mutedDim, cursor: "pointer", padding: 4 }}><Trash2 size={15} /></button>}
+                </div>
+              );
+            })}
+        </div>
+      )}
 
       {/* private board */}
       <div style={{ marginTop: 26 }}>
