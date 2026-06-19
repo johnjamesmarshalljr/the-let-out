@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { ChevronUp, ChevronDown, MessageCircle, Plus, Home, X, LogOut, Camera, Pencil, Users, Calendar, Search, Trophy, Play, Pause, Radio, Image as ImageIcon } from "lucide-react";
+import { ChevronUp, ChevronDown, MessageCircle, Plus, Home, X, LogOut, Camera, Pencil, Users, Calendar, Search, Trophy, Play, Pause, Radio, SkipBack, SkipForward, Image as ImageIcon } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import Houses from "@/components/Houses";
 import Balls from "@/components/Balls";
@@ -20,7 +20,7 @@ const SUGGESTED_TAGS = ["runway", "vogue", "performance", "realness", "face", "b
 //  Any PUBLIC SoundCloud URL works (a "set" = a playlist is ideal for a station).
 //  This is the ONLY line you change to set what the radio plays.
 // ============================================================
-const RADIO_URL = "https://soundcloud.com/jjgabbana/sets/y2k-the-remix-nyc";
+const RADIO_URL = "https://soundcloud.com/YOUR_HANDLE/sets/YOUR_PLAYLIST";
 const RADIO_LABEL = "THE LET OUT RADIO";
 const AVATAR_COLORS = ["#ff3d7f", "#a87bff", "#e8c66b", "#5fd6e0", "#5fe0a0", "#ff8a5f"];
 const USERNAME_RE = /^[a-zA-Z0-9_.]{3,20}$/;
@@ -210,14 +210,20 @@ function RadioBar() {
   }, [configured]);
 
   const toggle = () => { const w = widgetRef.current; if (!w) return; w.toggle(); setHint(false); };
+  const next = () => { const w = widgetRef.current; if (w) { w.next(); setHint(false); } };
+  const prev = () => { const w = widgetRef.current; if (w) { w.prev(); setHint(false); } };
   const src = `https://w.soundcloud.com/player/?url=${encodeURIComponent(RADIO_URL)}&auto_play=true&hide_related=true&show_comments=false&show_user=true&show_reposts=false&show_teaser=false&visual=false&color=%23ff3d7f`;
 
   return (
     <div className="radiobar" style={{ background: "rgba(20,16,31,0.98)", borderTop: `1px solid ${C.borderHot}`, backdropFilter: "blur(10px)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 16px", maxWidth: 1000, margin: "0 auto" }}>
-        <button onClick={toggle} disabled={!configured} style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 38, height: 38, borderRadius: 999, flexShrink: 0, border: "none", cursor: configured ? "pointer" : "default", background: `linear-gradient(135deg, ${C.magenta}, ${C.violet})`, color: C.ink }}>
-          {playing ? <Pause size={18} fill={C.ink} /> : <Play size={18} fill={C.ink} style={{ marginLeft: 2 }} />}
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+          <button onClick={prev} disabled={!configured} title="Previous" style={{ display: "flex", background: "none", border: "none", color: configured ? C.muted : C.mutedDim, cursor: configured ? "pointer" : "default", padding: 4 }}><SkipBack size={17} /></button>
+          <button onClick={toggle} disabled={!configured} title={playing ? "Pause" : "Play"} style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 38, height: 38, borderRadius: 999, border: "none", cursor: configured ? "pointer" : "default", background: `linear-gradient(135deg, ${C.magenta}, ${C.violet})`, color: C.ink }}>
+            {playing ? <Pause size={18} fill={C.ink} /> : <Play size={18} fill={C.ink} style={{ marginLeft: 2 }} />}
+          </button>
+          <button onClick={next} disabled={!configured} title="Next" style={{ display: "flex", background: "none", border: "none", color: configured ? C.muted : C.mutedDim, cursor: configured ? "pointer" : "default", padding: 4 }}><SkipForward size={17} /></button>
+        </div>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
             <span style={{ width: 7, height: 7, borderRadius: 7, flexShrink: 0, background: playing ? C.magenta : C.mutedDim, boxShadow: playing ? `0 0 6px ${C.magenta}` : "none" }} />
