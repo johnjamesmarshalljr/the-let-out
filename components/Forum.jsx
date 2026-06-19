@@ -20,7 +20,7 @@ const SUGGESTED_TAGS = ["runway", "vogue", "performance", "realness", "face", "b
 //  Any PUBLIC SoundCloud URL works (a "set" = a playlist is ideal for a station).
 //  This is the ONLY line you change to set what the radio plays.
 // ============================================================
-const RADIO_URL = "https://soundcloud.com/jjgabbana/sets/y2k-the-remix-nyc?si=9f62a4e741464a37b44a2179c1bfb694&utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing";
+const RADIO_URL = "https://soundcloud.com/YOUR_HANDLE/sets/YOUR_PLAYLIST";
 const RADIO_LABEL = "THE LET OUT RADIO";
 const AVATAR_COLORS = ["#ff3d7f", "#a87bff", "#e8c66b", "#5fd6e0", "#5fe0a0", "#ff8a5f"];
 const USERNAME_RE = /^[a-zA-Z0-9_.]{3,20}$/;
@@ -301,9 +301,15 @@ export default function Forum() {
       else if (tok) setShowSignIn(true);
       await loadFeed();
     })();
-    const { data: sub } = supabase.auth.onAuthStateChange(async (_e, session) => {
-      if (session && session.user) { await hydrateUser(session.user); setShowSignIn(false); }
-      else { setMe(null); setVotes({}); setView("feed"); }
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      // Keep this callback synchronous. Awaiting a Supabase query inside it can
+      // deadlock gotrue's lock and stop the session from restoring on refresh.
+      if (session && session.user) {
+        setShowSignIn(false);
+        setTimeout(() => { hydrateUser(session.user); }, 0);
+      } else if (event === "SIGNED_OUT") {
+        setMe(null); setVotes({}); setView("feed");
+      }
     });
     return () => { active = false; sub.subscription.unsubscribe(); };
   }, [hydrateUser, loadFeed]);
@@ -502,16 +508,17 @@ export default function Forum() {
               <span style={{ fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.14em", fontSize: 16 }}>Walk in</span>
               <button onClick={() => { setShowSignIn(false); setLinkSent(false); setAuthError(null); }} style={{ color: C.muted, background: "none", border: "none", cursor: "pointer" }}><X size={18} /></button>
             </div>
-            {linkSent ? <p style={{ color: C.text, fontSize: 14, lineHeight: 1.6, marginTop: 14 }}>Check <strong>{email}</strong> for a sign-in link. Open it on this device and you're in.</p>
+            {linkSent ? <p style={{ color: C.text, fontSize: 14, lineHeight: 1.6, marginTop: 14 }}>Check <strong>{email}</strong> for a sign-in link. Open it on this device and you're back in — same account, whether you're new or returning.</p>
               : (
                 <>
-                  <p style={{ color: C.muted, fontSize: 13, marginBottom: 16 }}>Pick a name and you're in. No email required.</p>
-                  <button onClick={createProfile} style={{ width: "100%", fontWeight: 800, marginBottom: 8, background: `linear-gradient(135deg, ${C.magenta}, ${C.violet})`, color: C.ink, borderRadius: 10, padding: 12, border: "none", cursor: "pointer", fontSize: 14.5 }}>Create a profile</button>
-                  <p style={{ color: C.mutedDim, fontSize: 11.5, lineHeight: 1.5, margin: "0 0 16px" }}>A name-only profile lives on this device. Use Google or email below to keep it across devices.</p>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "0 0 14px", color: C.mutedDim, fontSize: 11 }}><div style={{ height: 1, background: C.border, flex: 1 }} /> OR <div style={{ height: 1, background: C.border, flex: 1 }} /></div>
+                  <div style={{ textTransform: "uppercase", fontWeight: 700, fontSize: 10, letterSpacing: "0.16em", color: C.mutedDim, margin: "8px 0 10px" }}>Sign in or back in</div>
                   <button onClick={signInGoogle} style={{ width: "100%", fontWeight: 700, marginBottom: 12, background: "#fff", color: "#1a1a1a", borderRadius: 10, padding: 11, border: "none", cursor: "pointer", fontSize: 14 }}>Continue with Google</button>
                   <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@email.com" style={{ ...inputStyle, marginBottom: 10 }} />
                   <button onClick={sendMagicLink} style={{ width: "100%", fontWeight: 700, background: C.panel2, color: C.text, border: `1px solid ${C.border}`, borderRadius: 10, padding: 11, cursor: "pointer", fontSize: 14 }}>Email me a sign-in link</button>
+                  <p style={{ color: C.mutedDim, fontSize: 11.5, lineHeight: 1.5, margin: "10px 0 0" }}>Use the same Google or email as before and you'll land right back in your account — no password, on any device.</p>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "18px 0 14px", color: C.mutedDim, fontSize: 11 }}><div style={{ height: 1, background: C.border, flex: 1 }} /> NEW HERE? <div style={{ height: 1, background: C.border, flex: 1 }} /></div>
+                  <button onClick={createProfile} style={{ width: "100%", fontWeight: 800, marginBottom: 8, background: `linear-gradient(135deg, ${C.magenta}, ${C.violet})`, color: C.ink, borderRadius: 10, padding: 12, border: "none", cursor: "pointer", fontSize: 14.5 }}>Create a name-only profile</button>
+                  <p style={{ color: C.mutedDim, fontSize: 11.5, lineHeight: 1.5, margin: 0 }}>Fastest way in — no email needed. But a name-only profile lives only in this browser and can't be recovered if it's cleared or you switch devices. Add Google or email anytime to lock it in.</p>
                   {authError && <div style={{ color: C.magenta, fontSize: 12.5, marginTop: 14, lineHeight: 1.5 }}>{authError}</div>}
                 </>
               )}
