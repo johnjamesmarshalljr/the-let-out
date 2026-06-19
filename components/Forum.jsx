@@ -20,7 +20,7 @@ const SUGGESTED_TAGS = ["runway", "vogue", "performance", "realness", "face", "b
 //  Any PUBLIC SoundCloud URL works (a "set" = a playlist is ideal for a station).
 //  This is the ONLY line you change to set what the radio plays.
 // ============================================================
-const RADIO_URL = "https://soundcloud.com/YOUR_HANDLE/sets/YOUR_PLAYLIST";
+const RADIO_URL = "https://soundcloud.com/jjgabbana/sets/y2k-the-remix-nyc?si=9f62a4e741464a37b44a2179c1bfb694&utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing";
 const RADIO_LABEL = "THE LET OUT RADIO";
 const AVATAR_COLORS = ["#ff3d7f", "#a87bff", "#e8c66b", "#5fd6e0", "#5fe0a0", "#ff8a5f"];
 const USERNAME_RE = /^[a-zA-Z0-9_.]{3,20}$/;
