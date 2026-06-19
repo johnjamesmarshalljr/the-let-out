@@ -126,7 +126,7 @@ If you ever incorporate the project and decide it's worth it, you'd: complete Me
 
 ## What's built / what's next
 
-Built in: a single forum feed with **Hot/New/Top sorting, tags, and a search bar**, profiles, threaded comments with voting and **meme/GIF images**, link embeds (YouTube/TikTok/Instagram), photo/video upload, the **House model** (free-text titles, leader permissions, leader-add by username, **invite links**, join approval, one active house per person, members-only board + calendar), the **ball organizer** (ordered category lineup + public page), and — the differentiator — a **results layer**: organizers record category winners, which accrue as permanent **trophies on profiles and houses** and feed **house + walker standings**. Re-run `supabase/schema.sql` after pulling this version.
+Built in: a single forum feed with **Hot/New/Top sorting, tags, and a search bar**, profiles (username, pronouns, city, house, scene, bio, avatar, **Instagram/TikTok/YouTube links**, and **trophies**), **edit & delete your own posts**, threaded comments with voting and **meme/GIF images**, link embeds (YouTube/TikTok/Instagram), photo/video upload, the **House model** (free-text titles, leader permissions, leader-add by username, invite links, one active house per person, **live members-only chat + a month-grid calendar**), the **ball organizer** (ordered lineup + public page), a **results layer** (winners accrue as trophies on profiles/houses and feed standings), and a **persistent shuffled SoundCloud radio**. Re-run `supabase/schema.sql` after pulling this version.
 
 Next up: deepening results (placements beyond the winner, ball registration/RSVP), then notifications. Still not here: direct messages.
 

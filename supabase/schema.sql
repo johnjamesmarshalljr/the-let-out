@@ -16,6 +16,11 @@ alter table public.profiles add column if not exists scene        text;
 alter table public.profiles add column if not exists avatar_url   text;
 alter table public.profiles add column if not exists avatar_color text;
 alter table public.profiles add column if not exists bio          text;
+alter table public.profiles add column if not exists pronouns     text;
+alter table public.profiles add column if not exists city         text;
+alter table public.profiles add column if not exists instagram    text;
+alter table public.profiles add column if not exists tiktok       text;
+alter table public.profiles add column if not exists youtube      text;
 alter table public.profiles add column if not exists onboarded    boolean not null default false;
 -- anonymous users have no name at signup, so username must be nullable
 alter table public.profiles alter column username drop not null;
@@ -102,9 +107,11 @@ create policy "profiles update" on public.profiles for update to authenticated u
 
 drop policy if exists "posts read"   on public.posts;
 drop policy if exists "posts insert" on public.posts;
+drop policy if exists "posts update" on public.posts;
 drop policy if exists "posts delete" on public.posts;
 create policy "posts read"   on public.posts for select using (true);
 create policy "posts insert" on public.posts for insert to authenticated with check (auth.uid() = author_id);
+create policy "posts update" on public.posts for update to authenticated using (auth.uid() = author_id) with check (auth.uid() = author_id);
 create policy "posts delete" on public.posts for delete to authenticated using (auth.uid() = author_id);
 
 drop policy if exists "comments read"   on public.comments;

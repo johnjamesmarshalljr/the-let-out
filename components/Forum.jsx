@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { ChevronUp, ChevronDown, MessageCircle, Plus, Home, X, LogOut, Camera, Pencil, Users, Calendar, Search, Trophy, Play, Pause, Radio, SkipBack, SkipForward, Image as ImageIcon } from "lucide-react";
+import { ChevronUp, ChevronDown, MessageCircle, Plus, Home, X, LogOut, Camera, Pencil, Trash2, Users, Calendar, Search, Trophy, Play, Pause, Radio, SkipBack, SkipForward, Image as ImageIcon } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import Houses from "@/components/Houses";
 import Balls from "@/components/Balls";
@@ -20,7 +20,7 @@ const SUGGESTED_TAGS = ["runway", "vogue", "performance", "realness", "face", "b
 //  Any PUBLIC SoundCloud URL works (a "set" = a playlist is ideal for a station).
 //  This is the ONLY line you change to set what the radio plays.
 // ============================================================
-const RADIO_URL = "https://soundcloud.com/jjgabbana/sets/y2k-the-remix-nyc";
+const RADIO_URL = "https://soundcloud.com/jjgabbana/sets/y2k-the-remix-nyc?si=8695cf4876c2412fad3dedd5cb698482&utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing";
 const RADIO_LABEL = "THE LET OUT RADIO";
 const AVATAR_COLORS = ["#ff3d7f", "#a87bff", "#e8c66b", "#5fd6e0", "#5fe0a0", "#ff8a5f"];
 const USERNAME_RE = /^[a-zA-Z0-9_.]{3,20}$/;
@@ -119,6 +119,11 @@ function ProfileForm({ mode, me, initial, onSaved, onCancel }) {
   const [house, setHouse] = useState(initial.house || "");
   const [scene, setScene] = useState(initial.scene || null);
   const [bio, setBio] = useState(initial.bio || "");
+  const [pronouns, setPronouns] = useState(initial.pronouns || "");
+  const [city, setCity] = useState(initial.city || "");
+  const [instagram, setInstagram] = useState(initial.instagram || "");
+  const [tiktok, setTiktok] = useState(initial.tiktok || "");
+  const [youtube, setYoutube] = useState(initial.youtube || "");
   const [avatarUrl, setAvatarUrl] = useState(initial.avatar_url || null);
   const [avatarColor, setAvatarColor] = useState(initial.avatar_color || AVATAR_COLORS[0]);
   const [uploading, setUploading] = useState(false);
@@ -142,7 +147,8 @@ function ProfileForm({ mode, me, initial, onSaved, onCancel }) {
     const u = username.trim();
     if (!USERNAME_RE.test(u)) { setErr("Username must be 3–20 characters: letters, numbers, _ or . only."); return; }
     setSaving(true); setErr(null);
-    const payload = { username: u, house: house.trim() || null, scene: scene || null, bio: bio.trim() || null, avatar_url: avatarUrl || null, avatar_color: avatarColor, onboarded: true };
+    const clean = (s) => (s && s.trim() ? s.trim() : null);
+    const payload = { username: u, house: house.trim() || null, scene: scene || null, bio: bio.trim() || null, pronouns: clean(pronouns), city: clean(city), instagram: clean(instagram), tiktok: clean(tiktok), youtube: clean(youtube), avatar_url: avatarUrl || null, avatar_color: avatarColor, onboarded: true };
     const { error } = await supabase.from("profiles").update(payload).eq("id", me.id);
     if (error) { setErr(error.code === "23505" ? "That username is taken — try another." : "Could not save: " + error.message); setSaving(false); return; }
     setSaving(false); onSaved({ ...initial, ...payload, id: me.id });
@@ -163,12 +169,26 @@ function ProfileForm({ mode, me, initial, onSaved, onCancel }) {
       {!avatarUrl && <div style={{ marginBottom: 20 }}><label style={label}>Icon color</label><div style={{ display: "flex", gap: 10 }}>{AVATAR_COLORS.map((col) => <button key={col} onClick={() => setAvatarColor(col)} style={{ width: 30, height: 30, borderRadius: 30, background: col, cursor: "pointer", border: avatarColor === col ? `3px solid ${C.text}` : `2px solid ${C.border}` }} />)}</div></div>}
       <label style={label}>Username</label>
       <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="your handle" style={{ ...inputStyle, marginBottom: 18 }} />
+      <div style={{ display: "flex", gap: 12, marginBottom: 18, flexWrap: "wrap" }}>
+        <div style={{ flex: 1, minWidth: 130 }}>
+          <label style={label}>Pronouns <span style={{ textTransform: "none", color: C.mutedDim, letterSpacing: 0 }}>(optional)</span></label>
+          <input value={pronouns} onChange={(e) => setPronouns(e.target.value)} placeholder="she/her" style={inputStyle} />
+        </div>
+        <div style={{ flex: 1, minWidth: 130 }}>
+          <label style={label}>City <span style={{ textTransform: "none", color: C.mutedDim, letterSpacing: 0 }}>(optional)</span></label>
+          <input value={city} onChange={(e) => setCity(e.target.value)} placeholder="Miami" style={inputStyle} />
+        </div>
+      </div>
       <label style={label}>House <span style={{ textTransform: "none", color: C.mutedDim, letterSpacing: 0 }}>(optional)</span></label>
       <input value={house} onChange={(e) => setHouse(e.target.value)} placeholder="e.g. House of Gabbana" style={{ ...inputStyle, marginBottom: 18 }} />
       <label style={label}>Scene <span style={{ textTransform: "none", color: C.mutedDim, letterSpacing: 0 }}>(optional)</span></label>
       <div style={{ display: "flex", gap: 8, marginBottom: 18, flexWrap: "wrap" }}>{[["kiki", "Kiki"], ["mainstream", "Mainstream"], ["both", "Both"]].map(([v, l]) => <button key={v} onClick={() => setScene(scene === v ? null : v)} style={{ fontWeight: 700, fontSize: 13, padding: "8px 16px", borderRadius: 999, cursor: "pointer", border: `1px solid ${scene === v ? C.magenta : C.border}`, background: scene === v ? C.magenta : "transparent", color: scene === v ? C.ink : C.muted }}>{l}</button>)}</div>
       <label style={label}>Bio <span style={{ textTransform: "none", color: C.mutedDim, letterSpacing: 0 }}>(optional)</span></label>
       <textarea value={bio} onChange={(e) => setBio(e.target.value)} placeholder="A line about you." rows={3} style={{ ...inputStyle, marginBottom: 18, resize: "vertical" }} />
+      <label style={label}>Links <span style={{ textTransform: "none", color: C.mutedDim, letterSpacing: 0 }}>(optional — handle or full URL)</span></label>
+      <input value={instagram} onChange={(e) => setInstagram(e.target.value)} placeholder="Instagram" style={{ ...inputStyle, marginBottom: 10 }} />
+      <input value={tiktok} onChange={(e) => setTiktok(e.target.value)} placeholder="TikTok" style={{ ...inputStyle, marginBottom: 10 }} />
+      <input value={youtube} onChange={(e) => setYoutube(e.target.value)} placeholder="YouTube" style={{ ...inputStyle, marginBottom: 18 }} />
       {err && <div style={{ color: C.magenta, fontSize: 13, marginBottom: 14 }}>{err}</div>}
       <button onClick={save} disabled={saving || uploading} style={{ fontWeight: 700, background: `linear-gradient(135deg, ${C.magenta}, ${C.violet})`, color: C.ink, borderRadius: 999, padding: "11px 26px", fontSize: 14, border: "none", cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.6 : 1 }}>{saving ? "Saving…" : mode === "edit" ? "Save changes" : "Enter the Let Out"}</button>
     </div>
@@ -182,24 +202,30 @@ function RadioBar() {
   const [hint, setHint] = useState(false);
   const widgetRef = useRef(null);
   const iframeRef = useRef(null);
+  const countRef = useRef(0);
   const configured = !/YOUR_HANDLE|YOUR_PLAYLIST/.test(RADIO_URL);
 
   useEffect(() => {
     if (!configured) return;
     let widget;
+    const rand = () => Math.floor(Math.random() * countRef.current);
     const init = () => {
       if (!iframeRef.current || !window.SC || !window.SC.Widget) return;
       widget = window.SC.Widget(iframeRef.current);
       widgetRef.current = widget;
       const E = window.SC.Widget.Events;
       widget.bind(E.READY, () => {
-        widget.play(); // try to start on its own; browsers may block until a tap
-        widget.getCurrentSound((s) => { if (s && s.title) setTrack(s.title); });
-        setTimeout(() => widget.isPaused((p) => { if (p) setHint(true); }), 1200);
+        widget.getSounds((sounds) => {
+          countRef.current = (sounds && sounds.length) || 0;
+          if (countRef.current > 1) widget.skip(rand()); // shuffle: random opener
+          else widget.play();
+          widget.getCurrentSound((s) => { if (s && s.title) setTrack(s.title); });
+        });
+        setTimeout(() => widget.isPaused((p) => { if (p) setHint(true); }), 1500);
       });
       widget.bind(E.PLAY, () => { setPlaying(true); setHint(false); widget.getCurrentSound((s) => { if (s && s.title) setTrack(s.title); }); });
       widget.bind(E.PAUSE, () => setPlaying(false));
-      widget.bind(E.FINISH, () => widget.getCurrentSound((s) => { if (s && s.title) setTrack(s.title); }));
+      widget.bind(E.FINISH, () => { if (countRef.current > 1) widget.skip(rand()); }); // shuffle: random next
     };
     if (window.SC && window.SC.Widget) init();
     else {
@@ -261,6 +287,7 @@ export default function Forum() {
   const [loading, setLoading] = useState(true);
   const [showSignIn, setShowSignIn] = useState(false);
   const [draft, setDraft] = useState({ title: "", body: "", tags: [], media_url: null, media_type: null, link_url: "" });
+  const [editingId, setEditingId] = useState(null);
   const [profileData, setProfileData] = useState(null);
   const [email, setEmail] = useState("");
   const [linkSent, setLinkSent] = useState(false);
@@ -386,7 +413,7 @@ export default function Forum() {
   };
   const openProfile = async (username) => {
     setView("profile"); setProfileData(null);
-    const { data } = await supabase.from("profiles").select("id,username,house,scene,bio,avatar_url,avatar_color").eq("username", username).single();
+    const { data } = await supabase.from("profiles").select("id,username,house,scene,bio,avatar_url,avatar_color,pronouns,city,instagram,tiktok,youtube").eq("username", username).single();
     let trophies = [];
     if (data && data.id) {
       const { data: tr } = await supabase.from("ball_results_feed").select("category_name,ball_name,ball_date,winner_house_display,winner_house_name").eq("winner_profile_id", data.id).order("ball_date", { ascending: false });
@@ -395,15 +422,30 @@ export default function Forum() {
     setProfileData(data ? { ...data, trophies } : { username, trophies: [] });
   };
 
+  const blankDraft = () => ({ title: "", body: "", tags: [], media_url: null, media_type: null, link_url: "" });
+  const startNewPost = () => { setEditingId(null); setDraft(blankDraft()); setView("create"); };
+  const openEditPost = (post) => { setEditingId(post.id); setDraft({ title: post.title || "", body: post.body || "", tags: post.tags || [], media_url: post.media_url || null, media_type: post.media_type || null, link_url: post.link_url || "" }); setView("create"); };
+  const deletePost = async (id) => {
+    setBusy(true);
+    await supabase.from("posts").delete().eq("id", id);
+    await loadFeed(); setBusy(false); setView("feed");
+  };
   const submitPost = async () => {
     if (!requireIdentity() || !draft.title.trim() || busy) return;
     setBusy(true);
     const tags = draft.tags.slice(0, MAX_TAGS);
-    const { data, error } = await supabase.from("posts").insert({ author_id: me.id, category: tags[0] || null, tags, title: draft.title.trim(), body: draft.body.trim(), media_url: draft.media_url, media_type: draft.media_type, link_url: draft.link_url && draft.link_url.trim() ? draft.link_url.trim() : null }).select("id").single();
-    if (!error && data) {
-      await supabase.from("votes").upsert({ post_id: data.id, user_id: me.id, value: 1 }, { onConflict: "post_id,user_id" });
-      setDraft({ title: "", body: "", tags: [], media_url: null, media_type: null, link_url: "" });
-      await loadFeed(); await loadMyVotes(me.id); await openPost(data.id);
+    const fields = { category: tags[0] || null, tags, title: draft.title.trim(), body: draft.body.trim(), media_url: draft.media_url, media_type: draft.media_type, link_url: draft.link_url && draft.link_url.trim() ? draft.link_url.trim() : null };
+    if (editingId) {
+      const id = editingId;
+      const { error } = await supabase.from("posts").update(fields).eq("id", id);
+      if (!error) { setEditingId(null); setDraft(blankDraft()); await loadFeed(); await openPost(id); }
+    } else {
+      const { data, error } = await supabase.from("posts").insert({ author_id: me.id, ...fields }).select("id").single();
+      if (!error && data) {
+        await supabase.from("votes").upsert({ post_id: data.id, user_id: me.id, value: 1 }, { onConflict: "post_id,user_id" });
+        setDraft(blankDraft());
+        await loadFeed(); await loadMyVotes(me.id); await openPost(data.id);
+      }
     }
     setBusy(false);
   };
@@ -460,7 +502,7 @@ export default function Forum() {
           <span className="hide-sm" style={{ textTransform: "uppercase", letterSpacing: "0.2em", fontSize: 9, color: C.magenta, fontWeight: 700 }}>the scene, owned by us</span>
         </button>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <button onClick={() => { if (requireIdentity()) setView("create"); }} className="hide-sm" style={{ ...pill(`linear-gradient(135deg, ${C.magenta}, ${C.violet})`, C.ink), display: "flex", alignItems: "center", gap: 6 }}><Plus size={16} strokeWidth={2.6} /> Post</button>
+          <button onClick={() => { if (requireIdentity()) startNewPost(); }} className="hide-sm" style={{ ...pill(`linear-gradient(135deg, ${C.magenta}, ${C.violet})`, C.ink), display: "flex", alignItems: "center", gap: 6 }}><Plus size={16} strokeWidth={2.6} /> Post</button>
           {me ? (
             <>
               <button onClick={() => me.username ? openProfile(me.username) : setView("onboarding")} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}><Avatar name={me.username} url={me.avatar_url} color={me.avatar_color} /></button>
@@ -490,9 +532,9 @@ export default function Forum() {
                 {view === "feed" && <Feed visible={visible} sort={sort} setSort={setSort} query={query} setQuery={setQuery} tagFilter={tagFilter} setTagFilter={setTagFilter} votes={votes} applyVote={applyVote} openPost={openPost} openProfile={openProfile} onTag={filterByTag} />}
                 {view === "houses" && <Houses me={me} promptSignIn={() => setShowSignIn(true)} goOnboard={() => setView("onboarding")} openProfile={openProfile} />}
                 {view === "balls" && <Balls me={me} promptSignIn={() => setShowSignIn(true)} goOnboard={() => setView("onboarding")} openProfile={openProfile} />}
-                {view === "post" && selected && <PostDetail post={selected} comments={comments} cVotes={cVotes} voteComment={voteComment} vote={votes[selected.id]} applyVote={applyVote} back={() => setView("feed")} openProfile={openProfile} onTag={filterByTag} me={me} submitComment={submitComment} replyTo={replyTo} setReplyTo={setReplyTo} promptSignIn={() => setShowSignIn(true)} goOnboard={() => setView("onboarding")} busy={busy} />}
+                {view === "post" && selected && <PostDetail post={selected} comments={comments} cVotes={cVotes} voteComment={voteComment} vote={votes[selected.id]} applyVote={applyVote} back={() => setView("feed")} openProfile={openProfile} onTag={filterByTag} me={me} submitComment={submitComment} replyTo={replyTo} setReplyTo={setReplyTo} promptSignIn={() => setShowSignIn(true)} goOnboard={() => setView("onboarding")} busy={busy} onEdit={openEditPost} onDelete={deletePost} />}
                 {view === "profile" && profileData && <Profile profile={profileData} posts={posts} openPost={openPost} back={() => setView("feed")} isMe={!!(me && me.username && me.username === profileData.username)} onEdit={() => setView("edit")} />}
-                {view === "create" && me && <Create draft={draft} setDraft={setDraft} submitPost={submitPost} back={() => setView("feed")} inputStyle={inputStyle} busy={busy} me={me} />}
+                {view === "create" && me && <Create draft={draft} setDraft={setDraft} submitPost={submitPost} back={() => { const e = editingId; setEditingId(null); setView(e ? "post" : "feed"); }} inputStyle={inputStyle} busy={busy} me={me} isEditing={!!editingId} />}
               </>
             )}
         </main>
@@ -533,7 +575,7 @@ export default function Forum() {
           { k: "home", icon: <Home size={20} />, label: "Home", on: goHome, active: view === "feed" },
           { k: "houses", icon: <Users size={20} />, label: "Houses", on: () => setView("houses"), active: view === "houses" },
           { k: "balls", icon: <Calendar size={20} />, label: "Balls", on: () => setView("balls"), active: view === "balls" },
-          { k: "post", icon: <Plus size={20} />, label: "Post", on: () => { if (requireIdentity()) setView("create"); }, active: view === "create" },
+          { k: "post", icon: <Plus size={20} />, label: "Post", on: () => { if (requireIdentity()) startNewPost(); }, active: view === "create" },
         ].map((t) => (
           <button key={t.k} onClick={t.on} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2, background: "none", border: "none", cursor: "pointer", padding: "9px 0", color: t.active ? C.magenta : C.muted, fontSize: 10.5, fontWeight: 700 }}>{t.icon}{t.label}</button>
         ))}
@@ -671,7 +713,7 @@ function CommentNode({ node, depth, cVotes, voteComment, me, replyTo, setReplyTo
   );
 }
 
-function PostDetail({ post, comments, cVotes, voteComment, vote, applyVote, back, openProfile, onTag, me, submitComment, replyTo, setReplyTo, promptSignIn, goOnboard, busy }) {
+function PostDetail({ post, comments, cVotes, voteComment, vote, applyVote, back, openProfile, onTag, me, submitComment, replyTo, setReplyTo, promptSignIn, goOnboard, busy, onEdit, onDelete }) {
   const tree = useMemo(() => buildTree(comments), [comments]);
   const canReply = me && me.onboarded;
   const topLabel = !me ? "Sign in to reply" : "Finish your profile to reply";
@@ -691,6 +733,12 @@ function PostDetail({ post, comments, cVotes, voteComment, vote, applyVote, back
             {post.media_url ? <MediaView url={post.media_url} type={post.media_type} /> : null}
             {post.link_url ? <LinkEmbed url={post.link_url} /> : null}
             {(post.tags || []).length ? <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14 }}>{post.tags.map((t) => <TagChip key={t} tag={t} onClick={() => onTag(t)} />)}</div> : null}
+            {me && post.author_id === me.id && (
+              <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+                <button onClick={() => onEdit(post)} style={{ display: "flex", alignItems: "center", gap: 5, fontWeight: 700, fontSize: 12.5, background: C.panel2, color: C.text, border: `1px solid ${C.border}`, borderRadius: 999, padding: "6px 14px", cursor: "pointer" }}><Pencil size={13} /> Edit</button>
+                <button onClick={() => { if (window.confirm("Delete this post? This can't be undone.")) onDelete(post.id); }} disabled={busy} style={{ display: "flex", alignItems: "center", gap: 5, fontWeight: 700, fontSize: 12.5, background: "none", color: C.magenta, border: `1px solid ${C.magenta}55`, borderRadius: 999, padding: "6px 14px", cursor: "pointer" }}><Trash2 size={13} /> Delete</button>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -705,11 +753,23 @@ function PostDetail({ post, comments, cVotes, voteComment, vote, applyVote, back
   );
 }
 
+function socialUrl(kind, val) {
+  if (!val) return null;
+  const v = val.trim();
+  if (/^https?:\/\//i.test(v)) return v;
+  const h = v.replace(/^@/, "");
+  if (kind === "instagram") return "https://instagram.com/" + h;
+  if (kind === "tiktok") return "https://tiktok.com/@" + h;
+  if (kind === "youtube") return "https://youtube.com/@" + h;
+  return v;
+}
+
 function Profile({ profile, posts, openPost, back, isMe, onEdit }) {
   const theirs = posts.filter((p) => p.author === profile.username);
   const total = theirs.reduce((s, p) => s + p.score, 0);
   const sl = sceneLabel(profile.scene);
   const trophies = profile.trophies || [];
+  const socials = [["instagram", "Instagram", profile.instagram], ["tiktok", "TikTok", profile.tiktok], ["youtube", "YouTube", profile.youtube]].filter((x) => x[2]);
   return (
     <div>
       <button onClick={back} style={{ fontWeight: 600, marginBottom: 16, color: C.muted, fontSize: 13, background: "none", border: "none", cursor: "pointer", padding: 0 }}>← back</button>
@@ -717,15 +777,24 @@ function Profile({ profile, posts, openPost, back, isMe, onEdit }) {
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
           <Avatar name={profile.username} url={profile.avatar_url} color={profile.avatar_color} size={72} />
           <div style={{ flex: 1, minWidth: 0 }}>
-            <h1 style={{ fontWeight: 900, margin: "0 0 5px", fontSize: 24 }}>{profile.username || "unknown"}</h1>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+              <h1 style={{ fontWeight: 900, margin: 0, fontSize: 24 }}>{profile.username || "unknown"}</h1>
+              {profile.pronouns ? <span style={{ fontSize: 12.5, color: C.mutedDim, fontWeight: 600 }}>{profile.pronouns}</span> : null}
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 7 }}>
               {profile.house ? <span style={{ fontSize: 12, fontWeight: 700, color: C.violet, border: `1px solid ${C.violet}55`, borderRadius: 999, padding: "2px 10px" }}>{profile.house}</span> : null}
               {sl ? <span style={{ fontSize: 12, fontWeight: 700, color: C.gold, border: `1px solid ${C.gold}55`, borderRadius: 999, padding: "2px 10px" }}>{sl}</span> : null}
+              {profile.city ? <span style={{ fontSize: 12, fontWeight: 700, color: C.muted, border: `1px solid ${C.border}`, borderRadius: 999, padding: "2px 10px" }}>{profile.city}</span> : null}
             </div>
           </div>
           {isMe && <button onClick={onEdit} style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 700, fontSize: 13, background: C.panel2, color: C.text, border: `1px solid ${C.border}`, borderRadius: 999, padding: "8px 14px", cursor: "pointer", alignSelf: "flex-start" }}><Pencil size={14} /> Edit</button>}
         </div>
         {profile.bio ? <p style={{ color: C.text, fontSize: 14.5, lineHeight: 1.6, margin: "16px 0 0" }}>{profile.bio}</p> : null}
+        {socials.length > 0 && (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14 }}>
+            {socials.map(([kind, lbl, val]) => <a key={kind} href={socialUrl(kind, val)} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12.5, fontWeight: 700, color: C.text, background: C.panel2, border: `1px solid ${C.border}`, borderRadius: 999, padding: "5px 12px", textDecoration: "none" }}>{lbl}</a>)}
+          </div>
+        )}
         <div style={{ color: C.muted, fontSize: 13, marginTop: 14, display: "flex", gap: 14, flexWrap: "wrap" }}>
           <span>{theirs.length} posts · {total} upvotes</span>
           {trophies.length ? <span style={{ display: "inline-flex", alignItems: "center", gap: 5, color: C.gold, fontWeight: 700 }}><Trophy size={13} /> {trophies.length} {trophies.length === 1 ? "win" : "wins"}</span> : null}
@@ -759,7 +828,7 @@ function Profile({ profile, posts, openPost, back, isMe, onEdit }) {
   );
 }
 
-function Create({ draft, setDraft, submitPost, back, inputStyle, busy, me }) {
+function Create({ draft, setDraft, submitPost, back, inputStyle, busy, me, isEditing }) {
   const ready = draft.title.trim().length > 0;
   const [uploading, setUploading] = useState(false);
   const [err, setErr] = useState(null);
@@ -800,7 +869,7 @@ function Create({ draft, setDraft, submitPost, back, inputStyle, busy, me }) {
   return (
     <div style={{ maxWidth: 560 }}>
       <button onClick={back} style={{ fontWeight: 600, marginBottom: 16, color: C.muted, fontSize: 13, background: "none", border: "none", cursor: "pointer", padding: 0 }}>← cancel</button>
-      <h1 style={{ fontWeight: 900, margin: "0 0 20px", fontSize: 22 }}>New post</h1>
+      <h1 style={{ fontWeight: 900, margin: "0 0 20px", fontSize: 22 }}>{isEditing ? "Edit post" : "New post"}</h1>
       <label style={label}>Title</label>
       <input value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder="Say it plainly" style={{ ...inputStyle, marginBottom: 16 }} />
       <label style={label}>Body</label>
@@ -825,7 +894,7 @@ function Create({ draft, setDraft, submitPost, back, inputStyle, busy, me }) {
         : <button onClick={() => fileRef.current && fileRef.current.click()} disabled={uploading} style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 700, fontSize: 13, background: C.panel2, color: C.text, border: `1px solid ${C.border}`, borderRadius: 10, padding: "10px 16px", cursor: "pointer", marginBottom: 18 }}><Camera size={16} /> {uploading ? "Uploading…" : "Add photo or video"}</button>}
       {err && <div style={{ color: C.magenta, fontSize: 13, marginBottom: 14 }}>{err}</div>}
 
-      <div><button onClick={submitPost} disabled={!ready || busy || uploading} style={{ fontWeight: 700, background: ready ? `linear-gradient(135deg, ${C.magenta}, ${C.violet})` : C.panel2, color: ready ? C.ink : C.mutedDim, borderRadius: 999, padding: "11px 24px", fontSize: 14, border: "none", cursor: ready && !busy ? "pointer" : "not-allowed" }}>{busy ? "Posting…" : "Post"}</button></div>
+      <div><button onClick={submitPost} disabled={!ready || busy || uploading} style={{ fontWeight: 700, background: ready ? `linear-gradient(135deg, ${C.magenta}, ${C.violet})` : C.panel2, color: ready ? C.ink : C.mutedDim, borderRadius: 999, padding: "11px 24px", fontSize: 14, border: "none", cursor: ready && !busy ? "pointer" : "not-allowed" }}>{busy ? "Saving…" : isEditing ? "Save changes" : "Post"}</button></div>
     </div>
   );
 }
