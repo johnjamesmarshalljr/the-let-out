@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { Plus, Camera, MapPin, Crown, X, Check, UserMinus, ArrowUp, Calendar, Trash2, Link2, Pencil, UserPlus, Trophy } from "lucide-react";
+import { Plus, Camera, MapPin, Crown, X, Check, UserMinus, ArrowUp, Calendar, Trash2, Link2, Pencil, UserPlus, Trophy, ChevronLeft, ChevronRight } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 
 const C = {
@@ -55,7 +55,6 @@ export default function Houses({ me, promptSignIn, goOnboard, openProfile }) {
   const [messages, setMessages] = useState([]);
   const [events, setEvents] = useState([]);
   const [houseTrophies, setHouseTrophies] = useState([]);
-  const [evt, setEvt] = useState({ title: "", date: "", note: "" });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
   const [msgText, setMsgText] = useState("");
@@ -225,17 +224,21 @@ export default function Houses({ me, promptSignIn, goOnboard, openProfile }) {
     } else if (error) setErr("Couldn't send: " + error.message);
     setBusy(false);
   };
-  const addEvent = async () => {
-    if (!evt.title.trim() || !evt.date || busy) return;
+  const reloadEvents = async () => {
+    const { data } = await supabase.from("house_events").select("*").eq("house_id", house.id).order("event_date", { ascending: true });
+    setEvents(data || []);
+  };
+  const addHouseEvent = async ({ title, dateISO, note }) => {
+    if (!title || !dateISO || busy) return;
     setBusy(true);
-    const { error } = await supabase.from("house_events").insert({ house_id: house.id, title: evt.title.trim(), event_date: new Date(evt.date).toISOString(), note: evt.note.trim() || null, created_by: me.id });
-    if (!error) { setEvt({ title: "", date: "", note: "" }); openHouse(house.id); }
+    const { error } = await supabase.from("house_events").insert({ house_id: house.id, title, event_date: dateISO, note: note || null, created_by: me.id });
+    if (error) setErr("Couldn't add event: " + error.message); else await reloadEvents();
     setBusy(false);
   };
   const deleteEvent = async (id) => {
     setBusy(true);
     await supabase.from("house_events").delete().eq("id", id);
-    setBusy(false); openHouse(house.id);
+    await reloadEvents(); setBusy(false);
   };
 
   /* ---------- LIST ---------- */
@@ -419,34 +422,7 @@ export default function Houses({ me, promptSignIn, goOnboard, openProfile }) {
       {iAmActive && (
         <div style={{ marginTop: 26 }}>
           <div style={{ fontWeight: 700, textTransform: "uppercase", fontSize: 11, letterSpacing: "0.16em", color: C.mutedDim, marginBottom: 10, display: "flex", alignItems: "center", gap: 7 }}><Calendar size={13} /> Calendar <span style={{ color: C.mutedDim, textTransform: "none", letterSpacing: 0, fontWeight: 600 }}>· practices & events</span></div>
-          <div style={{ background: C.panel, border: `1px dashed ${C.border}`, borderRadius: 12, padding: 14, marginBottom: 14 }}>
-            <input value={evt.title} onChange={(e) => setEvt({ ...evt, title: e.target.value })} placeholder="What's happening (e.g. Thursday practice)" style={{ ...inputStyle, marginBottom: 10 }} />
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
-              <input type="datetime-local" value={evt.date} onChange={(e) => setEvt({ ...evt, date: e.target.value })} style={{ ...inputStyle, flex: 1, minWidth: 180 }} />
-              <input value={evt.note} onChange={(e) => setEvt({ ...evt, note: e.target.value })} placeholder="Note (optional)" style={{ ...inputStyle, flex: 1, minWidth: 150 }} />
-            </div>
-            <div style={{ display: "flex", justifyContent: "flex-end" }}>
-              <button onClick={addEvent} disabled={busy || !evt.title.trim() || !evt.date} style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 700, fontSize: 13, background: `linear-gradient(135deg, ${C.magenta}, ${C.violet})`, color: C.ink, border: "none", borderRadius: 999, padding: "8px 16px", cursor: "pointer", opacity: busy || !evt.title.trim() || !evt.date ? 0.6 : 1 }}><Plus size={15} strokeWidth={2.6} /> Add to calendar</button>
-            </div>
-          </div>
-          {events.length === 0 ? <div style={{ color: C.mutedDim, fontSize: 13 }}>Nothing scheduled yet.</div>
-            : events.map((ev) => {
-              const past = new Date(ev.event_date) < new Date();
-              return (
-                <div key={ev.id} style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "11px 0", borderTop: `1px solid ${C.border}`, opacity: past ? 0.55 : 1 }}>
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", width: 46, height: 46, borderRadius: 10, background: C.panel2, border: `1px solid ${C.border}`, flexShrink: 0 }}>
-                    <span style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", color: C.magenta }}>{new Date(ev.event_date).toLocaleString(undefined, { month: "short" })}</span>
-                    <span style={{ fontSize: 17, fontWeight: 900, color: C.text, lineHeight: 1 }}>{new Date(ev.event_date).getDate()}</span>
-                  </div>
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <div style={{ fontWeight: 700, fontSize: 14.5, color: C.text }}>{ev.title}</div>
-                    <div style={{ fontSize: 12.5, color: C.muted, marginTop: 2 }}>{fmtEvent(ev.event_date)}</div>
-                    {ev.note ? <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>{ev.note}</div> : null}
-                  </div>
-                  {(ev.created_by === me.id || iAmLeader) && <button onClick={() => deleteEvent(ev.id)} disabled={busy} title="Remove" style={{ display: "flex", background: "none", border: "none", color: C.mutedDim, cursor: "pointer", padding: 4 }}><Trash2 size={15} /></button>}
-                </div>
-              );
-            })}
+          <HouseCalendar events={events} onAdd={addHouseEvent} onDelete={deleteEvent} me={me} iAmLeader={iAmLeader} busy={busy} />
         </div>
       )}
 
@@ -477,6 +453,106 @@ export default function Houses({ me, promptSignIn, goOnboard, openProfile }) {
             {iAmLeader && <div style={{ fontSize: 12, color: C.mutedDim, marginTop: 10 }}>Bring people in with the <strong style={{ color: C.muted }}>Invite link</strong> or <strong style={{ color: C.muted }}>Add by username</strong> in the Members section above — joining gives them the chat and calendar.</div>}
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+function HouseCalendar({ events, onAdd, onDelete, me, iAmLeader, busy }) {
+  const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const today = new Date();
+  const [cursor, setCursor] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
+  const [selected, setSelected] = useState(ymd(today));
+  const [form, setForm] = useState({ time: "19:00", title: "", note: "" });
+  const [adding, setAdding] = useState(false);
+
+  const byDay = {};
+  events.forEach((e) => { const k = ymd(new Date(e.event_date)); (byDay[k] = byDay[k] || []).push(e); });
+
+  const year = cursor.getFullYear(), month = cursor.getMonth();
+  const startPad = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const todayKey = ymd(today);
+  const cells = [];
+  for (let i = 0; i < startPad; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(year, month, d));
+
+  const moveMonth = (delta) => setCursor(new Date(year, month + delta, 1));
+  const dayList = (byDay[selected] || []).slice().sort((a, b) => new Date(a.event_date) - new Date(b.event_date));
+  const selDate = selected ? new Date(selected + "T00:00:00") : null;
+
+  const submit = () => {
+    if (!form.title.trim() || !selected) return;
+    const iso = new Date(`${selected}T${form.time || "19:00"}`).toISOString();
+    onAdd({ title: form.title.trim(), dateISO: iso, note: form.note.trim() });
+    setForm({ time: form.time, title: "", note: "" });
+    setAdding(false);
+  };
+
+  const cell = { aspectRatio: "1", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", borderRadius: 9, border: "1px solid transparent", cursor: "pointer", position: "relative", fontSize: 13.5, fontWeight: 600 };
+
+  return (
+    <div>
+      <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 14, padding: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+          <button onClick={() => moveMonth(-1)} style={{ display: "flex", background: "none", border: "none", color: C.muted, cursor: "pointer", padding: 4 }}><ChevronLeft size={20} /></button>
+          <div style={{ fontWeight: 800, fontSize: 15, color: C.text }}>{cursor.toLocaleString(undefined, { month: "long", year: "numeric" })}</div>
+          <button onClick={() => moveMonth(1)} style={{ display: "flex", background: "none", border: "none", color: C.muted, cursor: "pointer", padding: 4 }}><ChevronRight size={20} /></button>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4, marginBottom: 4 }}>
+          {["S", "M", "T", "W", "T", "F", "S"].map((d, i) => <div key={i} style={{ textAlign: "center", fontSize: 10, fontWeight: 800, color: C.mutedDim, textTransform: "uppercase", padding: "2px 0" }}>{d}</div>)}
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4 }}>
+          {cells.map((d, i) => {
+            if (!d) return <div key={i} />;
+            const k = ymd(d);
+            const has = !!byDay[k];
+            const isToday = k === todayKey;
+            const isSel = k === selected;
+            return (
+              <button key={i} onClick={() => { setSelected(k); setAdding(false); }} style={{ ...cell, background: isSel ? C.gold : has ? C.panel2 : "transparent", color: isSel ? C.ink : C.text, border: isToday && !isSel ? `1px solid ${C.gold}` : "1px solid transparent" }}>
+                {d.getDate()}
+                {has && <span style={{ position: "absolute", bottom: 5, width: 5, height: 5, borderRadius: 5, background: isSel ? C.ink : C.magenta }} />}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div style={{ marginTop: 14, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ fontWeight: 700, fontSize: 13.5, color: C.text }}>{selDate ? selDate.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" }) : "Pick a day"}</div>
+        {selected && !adding && <button onClick={() => setAdding(true)} style={{ display: "flex", alignItems: "center", gap: 5, fontWeight: 700, fontSize: 12.5, color: C.gold, background: "none", border: `1px solid ${C.gold}44`, borderRadius: 999, padding: "5px 12px", cursor: "pointer" }}><Plus size={14} /> Add event</button>}
+      </div>
+
+      {adding && (
+        <div style={{ background: C.panel, border: `1px dashed ${C.border}`, borderRadius: 12, padding: 14, marginTop: 10 }}>
+          <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="What's happening (e.g. practice)" style={{ ...inputStyle, marginBottom: 10 }} autoFocus />
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+            <input type="time" value={form.time} onChange={(e) => setForm({ ...form, time: e.target.value })} style={{ ...inputStyle, flex: 1, minWidth: 120 }} />
+            <input value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="Note (optional)" style={{ ...inputStyle, flex: 2, minWidth: 150 }} />
+          </div>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+            <button onClick={() => setAdding(false)} style={{ fontWeight: 600, fontSize: 12.5, background: "none", border: "none", color: C.muted, cursor: "pointer" }}>cancel</button>
+            <button onClick={submit} disabled={busy || !form.title.trim()} style={{ display: "flex", alignItems: "center", gap: 5, fontWeight: 700, fontSize: 12.5, background: `linear-gradient(135deg, ${C.magenta}, ${C.violet})`, color: C.ink, border: "none", borderRadius: 999, padding: "7px 15px", cursor: "pointer", opacity: busy || !form.title.trim() ? 0.6 : 1 }}><Check size={14} /> Add</button>
+          </div>
+        </div>
+      )}
+
+      <div style={{ marginTop: 12 }}>
+        {dayList.length === 0 ? <div style={{ color: C.mutedDim, fontSize: 13, padding: "6px 0" }}>Nothing scheduled this day.</div>
+          : dayList.map((ev) => {
+            const past = new Date(ev.event_date) < new Date();
+            return (
+              <div key={ev.id} style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "11px 0", borderTop: `1px solid ${C.border}`, opacity: past ? 0.55 : 1 }}>
+                <div style={{ fontWeight: 800, fontSize: 13, color: C.gold, minWidth: 62, flexShrink: 0 }}>{new Date(ev.event_date).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}</div>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontWeight: 700, fontSize: 14.5, color: C.text }}>{ev.title}</div>
+                  {ev.note ? <div style={{ fontSize: 13, color: C.muted, marginTop: 3 }}>{ev.note}</div> : null}
+                </div>
+                {(ev.created_by === me.id || iAmLeader) && <button onClick={() => onDelete(ev.id)} disabled={busy} title="Remove" style={{ display: "flex", background: "none", border: "none", color: C.mutedDim, cursor: "pointer", padding: 4 }}><Trash2 size={15} /></button>}
+              </div>
+            );
+          })}
       </div>
     </div>
   );
