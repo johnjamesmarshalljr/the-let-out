@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { ChevronUp, ChevronDown, MessageCircle, Plus, Home, X, LogOut, Camera, Pencil, Users, Calendar, Search, Trophy, Image as ImageIcon } from "lucide-react";
+import { ChevronUp, ChevronDown, MessageCircle, Plus, Home, X, LogOut, Camera, Pencil, Users, Calendar, Search, Trophy, Play, Pause, Radio, Image as ImageIcon } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import Houses from "@/components/Houses";
 import Balls from "@/components/Balls";
@@ -13,6 +13,15 @@ const C = {
   text: "#f4f0fb", muted: "#9a90b3", mutedDim: "#6f6786",
 };
 const SUGGESTED_TAGS = ["runway", "vogue", "performance", "realness", "face", "beginners", "music", "balls", "tea", "legends", "fashion", "organizing"];
+
+// ============================================================
+//  RADIO STATION
+//  Paste your SoundCloud playlist / set / station / track URL below.
+//  Any PUBLIC SoundCloud URL works (a "set" = a playlist is ideal for a station).
+//  This is the ONLY line you change to set what the radio plays.
+// ============================================================
+const RADIO_URL = "https://soundcloud.com/YOUR_HANDLE/sets/YOUR_PLAYLIST";
+const RADIO_LABEL = "THE LET OUT RADIO";
 const AVATAR_COLORS = ["#ff3d7f", "#a87bff", "#e8c66b", "#5fd6e0", "#5fe0a0", "#ff8a5f"];
 const USERNAME_RE = /^[a-zA-Z0-9_.]{3,20}$/;
 const MAX_MEDIA_MB = 50;
@@ -162,6 +171,70 @@ function ProfileForm({ mode, me, initial, onSaved, onCancel }) {
       <textarea value={bio} onChange={(e) => setBio(e.target.value)} placeholder="A line about you." rows={3} style={{ ...inputStyle, marginBottom: 18, resize: "vertical" }} />
       {err && <div style={{ color: C.magenta, fontSize: 13, marginBottom: 14 }}>{err}</div>}
       <button onClick={save} disabled={saving || uploading} style={{ fontWeight: 700, background: `linear-gradient(135deg, ${C.magenta}, ${C.violet})`, color: C.ink, borderRadius: 999, padding: "11px 26px", fontSize: 14, border: "none", cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.6 : 1 }}>{saving ? "Saving…" : mode === "edit" ? "Save changes" : "Enter the Let Out"}</button>
+    </div>
+  );
+}
+
+function RadioBar() {
+  const [playing, setPlaying] = useState(false);
+  const [track, setTrack] = useState("");
+  const [open, setOpen] = useState(false);
+  const [hint, setHint] = useState(false);
+  const widgetRef = useRef(null);
+  const iframeRef = useRef(null);
+  const configured = !/YOUR_HANDLE|YOUR_PLAYLIST/.test(RADIO_URL);
+
+  useEffect(() => {
+    if (!configured) return;
+    let widget;
+    const init = () => {
+      if (!iframeRef.current || !window.SC || !window.SC.Widget) return;
+      widget = window.SC.Widget(iframeRef.current);
+      widgetRef.current = widget;
+      const E = window.SC.Widget.Events;
+      widget.bind(E.READY, () => {
+        widget.play(); // try to start on its own; browsers may block until a tap
+        widget.getCurrentSound((s) => { if (s && s.title) setTrack(s.title); });
+        setTimeout(() => widget.isPaused((p) => { if (p) setHint(true); }), 1200);
+      });
+      widget.bind(E.PLAY, () => { setPlaying(true); setHint(false); widget.getCurrentSound((s) => { if (s && s.title) setTrack(s.title); }); });
+      widget.bind(E.PAUSE, () => setPlaying(false));
+      widget.bind(E.FINISH, () => widget.getCurrentSound((s) => { if (s && s.title) setTrack(s.title); }));
+    };
+    if (window.SC && window.SC.Widget) init();
+    else {
+      let s = document.getElementById("sc-widget-api");
+      if (!s) { s = document.createElement("script"); s.id = "sc-widget-api"; s.src = "https://w.soundcloud.com/player/api.js"; s.onload = init; document.body.appendChild(s); }
+      else s.addEventListener("load", init);
+    }
+  }, [configured]);
+
+  const toggle = () => { const w = widgetRef.current; if (!w) return; w.toggle(); setHint(false); };
+  const src = `https://w.soundcloud.com/player/?url=${encodeURIComponent(RADIO_URL)}&auto_play=true&hide_related=true&show_comments=false&show_user=true&show_reposts=false&show_teaser=false&visual=false&color=%23ff3d7f`;
+
+  return (
+    <div className="radiobar" style={{ background: "rgba(20,16,31,0.98)", borderTop: `1px solid ${C.borderHot}`, backdropFilter: "blur(10px)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 16px", maxWidth: 1000, margin: "0 auto" }}>
+        <button onClick={toggle} disabled={!configured} style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 38, height: 38, borderRadius: 999, flexShrink: 0, border: "none", cursor: configured ? "pointer" : "default", background: `linear-gradient(135deg, ${C.magenta}, ${C.violet})`, color: C.ink }}>
+          {playing ? <Pause size={18} fill={C.ink} /> : <Play size={18} fill={C.ink} style={{ marginLeft: 2 }} />}
+        </button>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+            <span style={{ width: 7, height: 7, borderRadius: 7, flexShrink: 0, background: playing ? C.magenta : C.mutedDim, boxShadow: playing ? `0 0 6px ${C.magenta}` : "none" }} />
+            <span style={{ fontWeight: 800, fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", color: playing ? C.magenta : C.muted }}>{playing ? "On Air" : "Off Air"}</span>
+            <span style={{ fontWeight: 800, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: C.mutedDim }} className="hide-sm">· {RADIO_LABEL}</span>
+          </div>
+          <div style={{ fontSize: 12.5, color: C.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginTop: 1 }}>
+            {!configured ? "Set your SoundCloud URL to go live" : hint ? "Tap play to tune in" : track || "Loading the station…"}
+          </div>
+        </div>
+        <button onClick={() => setOpen((o) => !o)} disabled={!configured} title={open ? "Collapse" : "Browse the station"} style={{ display: "flex", background: "none", border: "none", color: C.muted, cursor: configured ? "pointer" : "default", padding: 4, flexShrink: 0 }}>
+          <Radio size={18} />
+        </button>
+      </div>
+      <div style={{ height: open ? 166 : 0, overflow: "hidden", transition: "height .2s", maxWidth: 1000, margin: "0 auto" }}>
+        {configured && <iframe ref={iframeRef} title={RADIO_LABEL} allow="autoplay" scrolling="no" frameBorder="no" src={src} style={{ width: "100%", height: 166, border: 0, display: "block" }} />}
+      </div>
     </div>
   );
 }
@@ -440,6 +513,8 @@ export default function Forum() {
         </div>
       )}
 
+      <RadioBar />
+
       <nav className="bottomnav">
         {[
           { k: "home", icon: <Home size={20} />, label: "Home", on: goHome, active: view === "feed" },
@@ -453,10 +528,13 @@ export default function Forum() {
 
       <style>{`
         .bottomnav { display: none; }
+        .radiobar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 24; }
+        main { padding-bottom: 84px !important; }
         @media (max-width: 760px) {
           .rail { display: none !important; }
           .hide-sm { display: none !important; }
-          main { padding-bottom: 86px !important; }
+          main { padding-bottom: 150px !important; }
+          .radiobar { bottom: 58px; }
           .bottomnav { display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 25; background: rgba(20,16,31,0.97); border-top: 1px solid ${C.border}; backdrop-filter: blur(10px); padding-bottom: env(safe-area-inset-bottom); }
         }
       `}</style>

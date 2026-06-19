@@ -129,3 +129,13 @@ If you ever incorporate the project and decide it's worth it, you'd: complete Me
 Built in: a single forum feed with **Hot/New/Top sorting, tags, and a search bar**, profiles, threaded comments with voting and **meme/GIF images**, link embeds (YouTube/TikTok/Instagram), photo/video upload, the **House model** (free-text titles, leader permissions, leader-add by username, **invite links**, join approval, one active house per person, members-only board + calendar), the **ball organizer** (ordered category lineup + public page), and — the differentiator — a **results layer**: organizers record category winners, which accrue as permanent **trophies on profiles and houses** and feed **house + walker standings**. Re-run `supabase/schema.sql` after pulling this version.
 
 Next up: deepening results (placements beyond the winner, ball registration/RSVP), then notifications. Still not here: direct messages.
+
+## The radio
+
+There's a persistent radio bar pinned to the bottom of every screen. It plays a SoundCloud station and **keeps playing as people move around the app** (since navigation here is just a view change, the player never unmounts). To set what it plays, open `components/Forum.jsx` and change one line near the top:
+
+```
+const RADIO_URL = "https://soundcloud.com/YOUR_HANDLE/sets/YOUR_PLAYLIST";
+```
+
+Paste any public SoundCloud URL — a set/playlist works best for a station, but a single track or your profile's station URL works too. Until you set it, the bar shows but won't have audio. Note: browsers block autoplay-with-sound until someone interacts with the page, so the bar tries to start on its own and otherwise says "Tap play to tune in" — one tap and it's live and persistent from there. The Radio icon on the right expands the station so people can scrub/pick tracks. (This is a frontend-only feature — no schema change needed for it.)
