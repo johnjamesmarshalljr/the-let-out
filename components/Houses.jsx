@@ -65,6 +65,9 @@ export default function Houses({ me, promptSignIn, goOnboard, openProfile }) {
   const [editTitle, setEditTitle] = useState(null); // { userId, value }
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef(null);
+  const membersRef = useRef([]);
+  const chatEndRef = useRef(null);
+  useEffect(() => { membersRef.current = members; }, [members]);
 
   const gate = () => { if (!me) { promptSignIn(); return false; } if (!me.onboarded) { goOnboard(); return false; } return true; };
 
@@ -110,6 +113,25 @@ export default function Houses({ me, promptSignIn, goOnboard, openProfile }) {
   const iAmLeader = myMembership && myMembership.status === "active" && myMembership.is_leader === true;
   const iAmFounder = myMembership && house && me && house.founder_id === me.id;
   const iAmActive = myMembership && myMembership.status === "active";
+
+  // live chat + calendar via Supabase Realtime (only while viewing a house you're active in)
+  useEffect(() => {
+    if (!house || !iAmActive) return;
+    const hid = house.id;
+    const channel = supabase.channel(`house-${hid}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "house_messages", filter: `house_id=eq.${hid}` }, (payload) => {
+        const m = payload.new;
+        setMessages((prev) => prev.some((x) => x.id === m.id) ? prev : [...prev, { id: m.id, body: m.body, created_at: m.created_at, author_id: m.author_id, author: membersRef.current.find((mm) => mm.user_id === m.author_id) }]);
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "house_events", filter: `house_id=eq.${hid}` }, async () => {
+        const { data } = await supabase.from("house_events").select("*").eq("house_id", hid).order("event_date", { ascending: true });
+        setEvents(data || []);
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [house?.id, iAmActive]);
+
+  useEffect(() => { if (chatEndRef.current) chatEndRef.current.scrollIntoView({ block: "nearest" }); }, [messages.length]);
 
   const uploadLogo = async (e) => {
     const file = e.target.files && e.target.files[0];
@@ -196,8 +218,11 @@ export default function Houses({ me, promptSignIn, goOnboard, openProfile }) {
   const postMessage = async () => {
     if (!msgText.trim() || busy) return;
     setBusy(true);
-    const { error } = await supabase.from("house_messages").insert({ house_id: house.id, author_id: me.id, body: msgText.trim() });
-    if (!error) { setMsgText(""); openHouse(house.id); }
+    const { data, error } = await supabase.from("house_messages").insert({ house_id: house.id, author_id: me.id, body: msgText.trim() }).select("id,body,created_at,author_id").single();
+    if (!error && data) {
+      setMsgText("");
+      setMessages((prev) => prev.some((x) => x.id === data.id) ? prev : [...prev, { ...data, author: members.find((mm) => mm.user_id === me.id) }]);
+    } else if (error) setErr("Couldn't send: " + error.message);
     setBusy(false);
   };
   const addEvent = async () => {
@@ -425,29 +450,31 @@ export default function Houses({ me, promptSignIn, goOnboard, openProfile }) {
         </div>
       )}
 
-      {/* private board */}
+      {/* house chat */}
       <div style={{ marginTop: 26 }}>
-        <div style={{ fontWeight: 700, textTransform: "uppercase", fontSize: 11, letterSpacing: "0.16em", color: C.mutedDim, marginBottom: 10 }}>House board <span style={{ color: C.mutedDim, textTransform: "none", letterSpacing: 0, fontWeight: 600 }}>· members only</span></div>
+        <div style={{ fontWeight: 700, textTransform: "uppercase", fontSize: 11, letterSpacing: "0.16em", color: C.mutedDim, marginBottom: 10 }}>House chat <span style={{ color: C.mutedDim, textTransform: "none", letterSpacing: 0, fontWeight: 600 }}>· members only · live</span></div>
         {!iAmActive ? (
-          <div style={{ border: `1px dashed ${C.border}`, borderRadius: 12, padding: 20, textAlign: "center", color: C.muted, fontSize: 13.5 }}>Join the house to see and post on the private board.</div>
+          <div style={{ border: `1px dashed ${C.border}`, borderRadius: 12, padding: 20, textAlign: "center", color: C.muted, fontSize: 13.5, lineHeight: 1.5 }}>The chat and calendar are for house members. {myMembership && myMembership.status === "pending" ? "Your request is pending a leader's approval." : "Join the house — or ask a leader to send you an invite link — to get in."}</div>
         ) : (
           <>
-            <div style={{ marginBottom: 14 }}>
-              <textarea value={msgText} onChange={(e) => setMsgText(e.target.value)} placeholder="Message your house…" rows={2} style={{ ...inputStyle, resize: "vertical" }} />
-              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
-                <button onClick={postMessage} disabled={busy || !msgText.trim()} style={{ fontWeight: 700, fontSize: 13, background: `linear-gradient(135deg, ${C.magenta}, ${C.violet})`, color: C.ink, border: "none", borderRadius: 999, padding: "7px 16px", cursor: "pointer", opacity: busy || !msgText.trim() ? 0.6 : 1 }}>Send</button>
-              </div>
-            </div>
-            {messages.length === 0 ? <div style={{ color: C.mutedDim, fontSize: 13 }}>No messages yet.</div>
-              : messages.map((m) => (
-                <div key={m.id} style={{ display: "flex", gap: 10, padding: "10px 0", borderTop: `1px solid ${C.border}` }}>
-                  <Avatar name={m.author && m.author.username} url={m.author && m.author.avatar_url} color={m.author && m.author.avatar_color} size={30} />
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <div style={{ fontSize: 12, color: C.muted, marginBottom: 3 }}><span style={{ fontWeight: 700, color: C.text }}>{(m.author && m.author.username) || "member"}</span> · {timeAgo(m.created_at)}</div>
-                    <p style={{ color: C.text, fontSize: 14, lineHeight: 1.5, margin: 0, whiteSpace: "pre-wrap" }}>{m.body}</p>
+            <div style={{ maxHeight: 360, overflowY: "auto", border: `1px solid ${C.border}`, borderRadius: 12, padding: "4px 14px", marginBottom: 12 }}>
+              {messages.length === 0 ? <div style={{ color: C.mutedDim, fontSize: 13, padding: "16px 0" }}>No messages yet. Say something to your house.</div>
+                : messages.map((m) => (
+                  <div key={m.id} style={{ display: "flex", gap: 10, padding: "10px 0", borderTop: `1px solid ${C.border}` }}>
+                    <Avatar name={m.author && m.author.username} url={m.author && m.author.avatar_url} color={m.author && m.author.avatar_color} size={30} />
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontSize: 12, color: C.muted, marginBottom: 3 }}><span style={{ fontWeight: 700, color: C.text }}>{(m.author && m.author.username) || "member"}</span> · {timeAgo(m.created_at)}</div>
+                      <p style={{ color: C.text, fontSize: 14, lineHeight: 1.5, margin: 0, whiteSpace: "pre-wrap" }}>{m.body}</p>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              <div ref={chatEndRef} />
+            </div>
+            <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+              <textarea value={msgText} onChange={(e) => setMsgText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); postMessage(); } }} placeholder="Message your house…" rows={1} style={{ ...inputStyle, resize: "none" }} />
+              <button onClick={postMessage} disabled={busy || !msgText.trim()} style={{ fontWeight: 700, fontSize: 13, background: `linear-gradient(135deg, ${C.magenta}, ${C.violet})`, color: C.ink, border: "none", borderRadius: 999, padding: "10px 18px", cursor: "pointer", opacity: busy || !msgText.trim() ? 0.6 : 1, flexShrink: 0 }}>Send</button>
+            </div>
+            {iAmLeader && <div style={{ fontSize: 12, color: C.mutedDim, marginTop: 10 }}>Bring people in with the <strong style={{ color: C.muted }}>Invite link</strong> or <strong style={{ color: C.muted }}>Add by username</strong> in the Members section above — joining gives them the chat and calendar.</div>}
           </>
         )}
       </div>

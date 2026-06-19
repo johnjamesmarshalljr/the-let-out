@@ -139,3 +139,7 @@ const RADIO_URL = "https://soundcloud.com/YOUR_HANDLE/sets/YOUR_PLAYLIST";
 ```
 
 Paste any public SoundCloud URL — a set/playlist works best for a station, but a single track or your profile's station URL works too. Until you set it, the bar shows but won't have audio. Note: browsers block autoplay-with-sound until someone interacts with the page, so the bar tries to start on its own and otherwise says "Tap play to tune in" — one tap and it's live and persistent from there. The Radio icon on the right expands the station so people can scrub/pick tracks. (This is a frontend-only feature — no schema change needed for it.)
+
+## House chat is live
+
+The house chat updates in real time (Supabase Realtime). The schema turns this on by adding `house_messages` and `house_events` to the `supabase_realtime` publication. If messages don't appear live for other members, open Supabase → Database → Replication (or Realtime) and confirm those two tables are enabled — re-running `schema.sql` should handle it automatically.

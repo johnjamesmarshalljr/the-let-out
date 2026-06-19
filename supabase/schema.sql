@@ -315,6 +315,10 @@ begin
 end; $$;
 grant execute on function public.redeem_invite(text) to authenticated;
 
+-- live updates for the house chat + calendar
+do $$ begin alter publication supabase_realtime add table public.house_messages; exception when duplicate_object then null; end $$;
+do $$ begin alter publication supabase_realtime add table public.house_events;   exception when duplicate_object then null; end $$;
+
 -- house views
 drop view if exists public.houses_directory;
 create view public.houses_directory as
