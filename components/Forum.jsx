@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { ChevronUp, ChevronDown, MessageCircle, Plus, Home, X, LogOut, Camera, Pencil, Trash2, Users, Calendar, Search, Trophy, Play, Pause, Radio, SkipBack, SkipForward, Image as ImageIcon } from "lucide-react";
+import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight, MessageCircle, Plus, Home, X, LogOut, Camera, Pencil, Trash2, Users, Calendar, CalendarDays, Search, Trophy, Play, Pause, Radio, SkipBack, SkipForward, Check, MapPin, Image as ImageIcon } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import Houses from "@/components/Houses";
 import Balls from "@/components/Balls";
@@ -20,8 +20,10 @@ const SUGGESTED_TAGS = ["runway", "vogue", "performance", "realness", "face", "b
 //  Any PUBLIC SoundCloud URL works (a "set" = a playlist is ideal for a station).
 //  This is the ONLY line you change to set what the radio plays.
 // ============================================================
-const RADIO_URL = "https://soundcloud.com/jjgabbana/sets/y2k-the-remix-nyc?si=8695cf4876c2412fad3dedd5cb698482&utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing";
+const RADIO_URL = "https://soundcloud.com/jjgabbana/sets/y2k-the-remix-nyc?si=b9bc3976dedf4bf28b91f60e23d4e3fb&utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing";
 const RADIO_LABEL = "THE LET OUT RADIO";
+// Y2K chrome accent (light enough that dark text on top stays legible)
+const CHROME = "linear-gradient(160deg, #f6f3fb 0%, #d2cddb 26%, #9d96af 50%, #efeaf7 72%, #bcb5ca 100%)";
 const AVATAR_COLORS = ["#ff3d7f", "#a87bff", "#e8c66b", "#5fd6e0", "#5fe0a0", "#ff8a5f"];
 const USERNAME_RE = /^[a-zA-Z0-9_.]{3,20}$/;
 const MAX_MEDIA_MB = 50;
@@ -271,6 +273,142 @@ function RadioBar() {
   );
 }
 
+function GlobalCalendar({ me, onOpenBall, promptSignIn, goOnboard }) {
+  const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const today = new Date();
+  const [cursor, setCursor] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
+  const [selected, setSelected] = useState(ymd(today));
+  const [balls, setBalls] = useState([]);
+  const [community, setCommunity] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState({ time: "21:00", title: "", location: "" });
+  const [busy, setBusy] = useState(false);
+  const inputStyle = { background: C.ink, border: `1px solid ${C.border}`, borderRadius: 10, color: C.text, padding: "10px 12px", width: "100%", outline: "none", fontSize: 14 };
+
+  const load = useCallback(async () => {
+    const [{ data: b }, { data: c }] = await Promise.all([
+      supabase.from("balls_directory").select("id,name,ball_date,location,status"),
+      supabase.from("community_events").select("*"),
+    ]);
+    setBalls(b || []); setCommunity(c || []); setLoading(false);
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const byDay = {};
+  balls.forEach((b) => { if (b.ball_date) { const k = b.ball_date.slice(0, 10); (byDay[k] = byDay[k] || []).push({ kind: "ball", id: b.id, title: b.name, location: b.location }); } });
+  community.forEach((e) => { const d = new Date(e.event_date); const k = ymd(d); (byDay[k] = byDay[k] || []).push({ kind: "event", id: e.id, title: e.title, location: e.location, time: d, created_by: e.created_by }); });
+
+  const year = cursor.getFullYear(), month = cursor.getMonth();
+  const startPad = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const todayKey = ymd(today);
+  const cells = [];
+  for (let i = 0; i < startPad; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(year, month, d));
+  const moveMonth = (delta) => setCursor(new Date(year, month + delta, 1));
+
+  const dayList = (byDay[selected] || []).slice().sort((a, b) => (a.kind === b.kind ? 0 : a.kind === "ball" ? -1 : 1));
+  const selDate = selected ? new Date(selected + "T00:00:00") : null;
+  const gate = () => { if (!me) { promptSignIn(); return false; } if (!me.onboarded) { goOnboard(); return false; } return true; };
+
+  const addEvent = async () => {
+    if (!gate() || !form.title.trim() || !selected) return;
+    setBusy(true);
+    const iso = new Date(`${selected}T${form.time || "21:00"}`).toISOString();
+    const { error } = await supabase.from("community_events").insert({ title: form.title.trim(), event_date: iso, location: form.location.trim() || null, created_by: me.id });
+    if (!error) { setForm({ time: "21:00", title: "", location: "" }); setAdding(false); await load(); }
+    setBusy(false);
+  };
+  const del = async (id) => { setBusy(true); await supabase.from("community_events").delete().eq("id", id); await load(); setBusy(false); };
+
+  const cell = { aspectRatio: "1", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", borderRadius: 9, border: "1px solid transparent", cursor: "pointer", position: "relative", fontSize: 13.5, fontWeight: 600 };
+
+  return (
+    <div>
+      <h1 style={{ fontWeight: 900, fontSize: 22, margin: "0 0 4px" }}>Calendar</h1>
+      <p style={{ color: C.muted, fontSize: 14, margin: "0 0 16px" }}>Every ball and function across the scene, in one place.</p>
+
+      {loading ? <div style={{ color: C.muted, padding: 40, textAlign: "center" }}>Loading…</div> : (
+        <>
+          <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 14, padding: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+              <button onClick={() => moveMonth(-1)} style={{ display: "flex", background: "none", border: "none", color: C.muted, cursor: "pointer", padding: 4 }}><ChevronLeft size={20} /></button>
+              <div style={{ fontWeight: 800, fontSize: 15, color: C.text }}>{cursor.toLocaleString(undefined, { month: "long", year: "numeric" })}</div>
+              <button onClick={() => moveMonth(1)} style={{ display: "flex", background: "none", border: "none", color: C.muted, cursor: "pointer", padding: 4 }}><ChevronRight size={20} /></button>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4, marginBottom: 4 }}>
+              {["S", "M", "T", "W", "T", "F", "S"].map((d, i) => <div key={i} style={{ textAlign: "center", fontSize: 10, fontWeight: 800, color: C.mutedDim, textTransform: "uppercase", padding: "2px 0" }}>{d}</div>)}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4 }}>
+              {cells.map((d, i) => {
+                if (!d) return <div key={i} />;
+                const k = ymd(d);
+                const items = byDay[k];
+                const hasBall = items && items.some((x) => x.kind === "ball");
+                const hasEvent = items && items.some((x) => x.kind === "event");
+                const isToday = k === todayKey, isSel = k === selected;
+                return (
+                  <button key={i} onClick={() => { setSelected(k); setAdding(false); }} style={{ ...cell, background: isSel ? C.gold : items ? C.panel2 : "transparent", color: isSel ? C.ink : C.text, border: isToday && !isSel ? `1px solid ${C.gold}` : "1px solid transparent" }}>
+                    {d.getDate()}
+                    {items && <span style={{ position: "absolute", bottom: 5, display: "flex", gap: 3 }}>
+                      {hasBall && <span style={{ width: 5, height: 5, borderRadius: 5, background: isSel ? C.ink : C.magenta }} />}
+                      {hasEvent && <span style={{ width: 5, height: 5, borderRadius: 5, background: isSel ? C.ink : C.violet }} />}
+                    </span>}
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{ display: "flex", gap: 16, marginTop: 12, fontSize: 11.5, color: C.muted }}>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><span style={{ width: 7, height: 7, borderRadius: 7, background: C.magenta }} /> Ball</span>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><span style={{ width: 7, height: 7, borderRadius: 7, background: C.violet }} /> Function</span>
+            </div>
+          </div>
+
+          <div style={{ marginTop: 14, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ fontWeight: 700, fontSize: 13.5, color: C.text }}>{selDate ? selDate.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" }) : "Pick a day"}</div>
+            {selected && !adding && <button onClick={() => { if (gate()) setAdding(true); }} style={{ display: "flex", alignItems: "center", gap: 5, fontWeight: 700, fontSize: 12.5, color: C.gold, background: "none", border: `1px solid ${C.gold}44`, borderRadius: 999, padding: "5px 12px", cursor: "pointer" }}><Plus size={14} /> Add a function</button>}
+          </div>
+
+          {adding && (
+            <div style={{ background: C.panel, border: `1px dashed ${C.border}`, borderRadius: 12, padding: 14, marginTop: 10 }}>
+              <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="What's happening (e.g. kiki, class, fundraiser)" style={{ ...inputStyle, marginBottom: 10 }} autoFocus />
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+                <input type="time" value={form.time} onChange={(e) => setForm({ ...form, time: e.target.value })} style={{ ...inputStyle, flex: 1, minWidth: 110 }} />
+                <input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="Location (optional)" style={{ ...inputStyle, flex: 2, minWidth: 140 }} />
+              </div>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                <button onClick={() => setAdding(false)} style={{ fontWeight: 600, fontSize: 12.5, background: "none", border: "none", color: C.muted, cursor: "pointer" }}>cancel</button>
+                <button onClick={addEvent} disabled={busy || !form.title.trim()} style={{ display: "flex", alignItems: "center", gap: 5, fontWeight: 700, fontSize: 12.5, background: `linear-gradient(135deg, ${C.magenta}, ${C.violet})`, color: C.ink, border: "none", borderRadius: 999, padding: "7px 15px", cursor: "pointer", opacity: busy || !form.title.trim() ? 0.6 : 1 }}><Check size={14} /> Add</button>
+              </div>
+              <div style={{ fontSize: 11.5, color: C.mutedDim, marginTop: 8 }}>Posting a full ball? Use the Balls tab — those show here automatically.</div>
+            </div>
+          )}
+
+          <div style={{ marginTop: 12 }}>
+            {dayList.length === 0 ? <div style={{ color: C.mutedDim, fontSize: 13, padding: "6px 0" }}>Nothing on the calendar this day.</div>
+              : dayList.map((it) => (
+                <div key={it.kind + it.id} style={{ display: "flex", alignItems: "center", gap: 12, background: C.panel, border: `1px solid ${it.kind === "ball" ? C.magenta + "44" : C.border}`, borderRadius: 12, padding: "12px 14px", marginBottom: 8 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: 8, flexShrink: 0, background: it.kind === "ball" ? C.magenta : C.violet }} />
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ fontWeight: 700, fontSize: 14.5, color: C.text }}>{it.title}</div>
+                    <div style={{ fontSize: 12.5, color: C.muted, marginTop: 2, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                      <span style={{ textTransform: "uppercase", fontWeight: 700, fontSize: 10.5, letterSpacing: "0.08em", color: it.kind === "ball" ? C.magenta : C.violet }}>{it.kind === "ball" ? "Ball" : "Function"}</span>
+                      {it.time ? <span>{it.time.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}</span> : null}
+                      {it.location ? <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}><MapPin size={11} /> {it.location}</span> : null}
+                    </div>
+                  </div>
+                  {it.kind === "ball" ? <button onClick={() => onOpenBall(it.id)} style={{ fontWeight: 700, fontSize: 12, color: C.gold, background: "none", border: `1px solid ${C.gold}44`, borderRadius: 999, padding: "5px 11px", cursor: "pointer", flexShrink: 0 }}>View</button>
+                    : (me && it.created_by === me.id ? <button onClick={() => del(it.id)} disabled={busy} title="Remove" style={{ display: "flex", background: "none", border: "none", color: C.mutedDim, cursor: "pointer", padding: 4 }}><Trash2 size={15} /></button> : null)}
+                </div>
+              ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 /* ========================================================================== */
 export default function Forum() {
   const [posts, setPosts] = useState([]);
@@ -296,6 +434,7 @@ export default function Forum() {
   const [voteError, setVoteError] = useState(null);
   const [inviteToken, setInviteToken] = useState(null);
   const [inviteMsg, setInviteMsg] = useState(null);
+  const [jumpBall, setJumpBall] = useState(null);
   const redeemed = useRef(false);
 
   const loadFeed = useCallback(async () => {
@@ -515,6 +654,7 @@ export default function Forum() {
       <div style={{ display: "flex", maxWidth: 1000, margin: "0 auto" }}>
         <aside className="rail" style={{ flexShrink: 0, padding: "20px 12px", width: 200, borderRight: `1px solid ${C.border}` }}>
           <button onClick={goHome} style={railBtn(view === "feed")}><Home size={16} /> Home</button>
+          <button onClick={() => setView("calendar")} style={railBtn(view === "calendar")}><CalendarDays size={16} /> Calendar</button>
           <button onClick={() => setView("houses")} style={railBtn(view === "houses")}><Users size={16} /> Houses</button>
           <button onClick={() => setView("balls")} style={{ ...railBtn(view === "balls"), marginBottom: 12 }}><Calendar size={16} /> Balls</button>
           <div style={{ textTransform: "uppercase", fontWeight: 700, padding: "0 8px", marginBottom: 8, fontSize: 10, letterSpacing: "0.18em", color: C.mutedDim }}>Tags</div>
@@ -531,7 +671,8 @@ export default function Forum() {
               <>
                 {view === "feed" && <Feed visible={visible} sort={sort} setSort={setSort} query={query} setQuery={setQuery} tagFilter={tagFilter} setTagFilter={setTagFilter} votes={votes} applyVote={applyVote} openPost={openPost} openProfile={openProfile} onTag={filterByTag} />}
                 {view === "houses" && <Houses me={me} promptSignIn={() => setShowSignIn(true)} goOnboard={() => setView("onboarding")} openProfile={openProfile} />}
-                {view === "balls" && <Balls me={me} promptSignIn={() => setShowSignIn(true)} goOnboard={() => setView("onboarding")} openProfile={openProfile} />}
+                {view === "balls" && <Balls me={me} promptSignIn={() => setShowSignIn(true)} goOnboard={() => setView("onboarding")} openProfile={openProfile} jumpBall={jumpBall} onJumped={() => setJumpBall(null)} />}
+                {view === "calendar" && <GlobalCalendar me={me} onOpenBall={(id) => { setJumpBall(id); setView("balls"); }} promptSignIn={() => setShowSignIn(true)} goOnboard={() => setView("onboarding")} />}
                 {view === "post" && selected && <PostDetail post={selected} comments={comments} cVotes={cVotes} voteComment={voteComment} vote={votes[selected.id]} applyVote={applyVote} back={() => setView("feed")} openProfile={openProfile} onTag={filterByTag} me={me} submitComment={submitComment} replyTo={replyTo} setReplyTo={setReplyTo} promptSignIn={() => setShowSignIn(true)} goOnboard={() => setView("onboarding")} busy={busy} onEdit={openEditPost} onDelete={deletePost} />}
                 {view === "profile" && profileData && <Profile profile={profileData} posts={posts} openPost={openPost} back={() => setView("feed")} isMe={!!(me && me.username && me.username === profileData.username)} onEdit={() => setView("edit")} />}
                 {view === "create" && me && <Create draft={draft} setDraft={setDraft} submitPost={submitPost} back={() => { const e = editingId; setEditingId(null); setView(e ? "post" : "feed"); }} inputStyle={inputStyle} busy={busy} me={me} isEditing={!!editingId} />}
@@ -547,19 +688,19 @@ export default function Forum() {
         <div style={{ position: "fixed", inset: 0, zIndex: 30, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, background: "rgba(8,6,14,0.7)" }} onClick={() => { setShowSignIn(false); setLinkSent(false); setAuthError(null); }}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: C.panel, border: `1px solid ${C.borderHot}`, borderRadius: 18, padding: 24, width: 380, maxWidth: "100%" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-              <span style={{ fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.14em", fontSize: 16 }}>Walk in</span>
+              <span style={{ fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.18em", fontSize: 22 }}>Walk in</span>
               <button onClick={() => { setShowSignIn(false); setLinkSent(false); setAuthError(null); }} style={{ color: C.muted, background: "none", border: "none", cursor: "pointer" }}><X size={18} /></button>
             </div>
             {linkSent ? <p style={{ color: C.text, fontSize: 14, lineHeight: 1.6, marginTop: 14 }}>Check <strong>{email}</strong> for a sign-in link. Open it on this device and you're back in — same account, whether you're new or returning.</p>
               : (
                 <>
                   <div style={{ textTransform: "uppercase", fontWeight: 700, fontSize: 10, letterSpacing: "0.16em", color: C.mutedDim, margin: "8px 0 10px" }}>Sign in or back in</div>
-                  <button onClick={signInGoogle} style={{ width: "100%", fontWeight: 700, marginBottom: 12, background: "#fff", color: "#1a1a1a", borderRadius: 10, padding: 11, border: "none", cursor: "pointer", fontSize: 14 }}>Continue with Google</button>
-                  <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@email.com" style={{ ...inputStyle, marginBottom: 10 }} />
-                  <button onClick={sendMagicLink} style={{ width: "100%", fontWeight: 700, background: C.panel2, color: C.text, border: `1px solid ${C.border}`, borderRadius: 10, padding: 11, cursor: "pointer", fontSize: 14 }}>Email me a sign-in link</button>
+                  <button onClick={signInGoogle} style={{ width: "100%", fontWeight: 700, marginBottom: 12, background: "#fff", color: "#1a1a1a", borderRadius: 999, padding: 12, border: "none", cursor: "pointer", fontSize: 14 }}>Continue with Google</button>
+                  <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@email.com" style={{ ...inputStyle, borderRadius: 999, marginBottom: 10 }} />
+                  <button onClick={sendMagicLink} style={{ width: "100%", fontWeight: 700, background: C.panel2, color: C.text, border: `1px solid ${C.border}`, borderRadius: 999, padding: 12, cursor: "pointer", fontSize: 14 }}>Email me a sign-in link</button>
                   <p style={{ color: C.mutedDim, fontSize: 11.5, lineHeight: 1.5, margin: "10px 0 0" }}>Use the same Google or email as before and you'll land right back in your account — no password, on any device.</p>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "18px 0 14px", color: C.mutedDim, fontSize: 11 }}><div style={{ height: 1, background: C.border, flex: 1 }} /> NEW HERE? <div style={{ height: 1, background: C.border, flex: 1 }} /></div>
-                  <button onClick={createProfile} style={{ width: "100%", fontWeight: 800, marginBottom: 8, background: `linear-gradient(135deg, ${C.magenta}, ${C.violet})`, color: C.ink, borderRadius: 10, padding: 12, border: "none", cursor: "pointer", fontSize: 14.5 }}>Create a name-only profile</button>
+                  <button onClick={createProfile} style={{ width: "100%", fontWeight: 800, marginBottom: 8, background: CHROME, color: "#161018", borderRadius: 999, padding: 13, border: "none", cursor: "pointer", fontSize: 14.5, boxShadow: "0 2px 14px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.55)" }}>Create a name-only profile</button>
                   <p style={{ color: C.mutedDim, fontSize: 11.5, lineHeight: 1.5, margin: 0 }}>Fastest way in — no email needed. But a name-only profile lives only in this browser and can't be recovered if it's cleared or you switch devices. Add Google or email anytime to lock it in.</p>
                   {authError && <div style={{ color: C.magenta, fontSize: 12.5, marginTop: 14, lineHeight: 1.5 }}>{authError}</div>}
                 </>
@@ -573,6 +714,7 @@ export default function Forum() {
       <nav className="bottomnav">
         {[
           { k: "home", icon: <Home size={20} />, label: "Home", on: goHome, active: view === "feed" },
+          { k: "calendar", icon: <CalendarDays size={20} />, label: "Calendar", on: () => setView("calendar"), active: view === "calendar" },
           { k: "houses", icon: <Users size={20} />, label: "Houses", on: () => setView("houses"), active: view === "houses" },
           { k: "balls", icon: <Calendar size={20} />, label: "Balls", on: () => setView("balls"), active: view === "balls" },
           { k: "post", icon: <Plus size={20} />, label: "Post", on: () => { if (requireIdentity()) startNewPost(); }, active: view === "create" },

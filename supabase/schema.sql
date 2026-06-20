@@ -447,5 +447,27 @@ left join public.houses   h  on h.id = r.winner_house_id;
 grant select on public.ball_results_feed to anon, authenticated;
 
 -- ============================================================
+--  GLOBAL CALENDAR (community-wide events, public)
+-- ============================================================
+create table if not exists public.community_events (
+  id          uuid primary key default gen_random_uuid(),
+  title       text not null,
+  event_date  timestamptz not null,
+  location    text,
+  description text,
+  created_by  uuid not null references public.profiles(id) on delete cascade,
+  created_at  timestamptz not null default now()
+);
+alter table public.community_events enable row level security;
+drop policy if exists "ce read"   on public.community_events;
+drop policy if exists "ce insert" on public.community_events;
+drop policy if exists "ce delete" on public.community_events;
+create policy "ce read"   on public.community_events for select using (true);
+create policy "ce insert" on public.community_events for insert to authenticated with check (auth.uid() = created_by);
+create policy "ce delete" on public.community_events for delete to authenticated using (auth.uid() = created_by);
+grant select on public.community_events to anon, authenticated;
+grant insert, delete on public.community_events to authenticated;
+
+-- ============================================================
 --  Done.
 -- ============================================================

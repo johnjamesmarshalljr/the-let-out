@@ -130,6 +130,14 @@ Built in: a single forum feed with **Hot/New/Top sorting, tags, and a search bar
 
 Next up: deepening results (placements beyond the winner, ball registration/RSVP), then notifications. Still not here: direct messages.
 
+## Global calendar
+
+The Calendar tab shows every **ball** and community **function** across the scene on a month grid (balls in magenta, functions in violet), with a tap-a-day detail list. Balls come from the Balls tab automatically; anyone signed in can add a community function (kiki, class, fundraiser) right from the calendar. Tapping a ball jumps you to that ball's page. (House practices stay private to each house — those live on the house calendar, not here.) Re-run `supabase/schema.sql` to add the `community_events` table.
+
+## Visual direction
+
+Becky's chrome / Y2K direction is starting on the login screen (chrome primary button, pill controls, bolder wordmark). The actual 3D chrome art (butterfly, daisy) should be exported as transparent PNGs from whatever tool made them (Spline/Figma) and dropped in — say the word and I'll wire them into the login and headers. The dark base stays for legibility; chrome comes in as accents on the big moments.
+
 ## The radio
 
 There's a persistent radio bar pinned to the bottom of every screen. It plays a SoundCloud station and **keeps playing as people move around the app** (since navigation here is just a view change, the player never unmounts). To set what it plays, open `components/Forum.jsx` and change one line near the top:

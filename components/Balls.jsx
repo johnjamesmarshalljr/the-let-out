@@ -32,7 +32,7 @@ function Flyer({ url, name, w = 64, h = 80 }) {
   return <div style={{ width: w, height: h, borderRadius: 10, flexShrink: 0, background: `linear-gradient(135deg, ${C.gold}, ${C.magenta})`, display: "flex", alignItems: "center", justifyContent: "center", color: C.ink, fontWeight: 900, fontSize: w * 0.4 }}>{(name || "?")[0].toUpperCase()}</div>;
 }
 
-export default function Balls({ me, promptSignIn, goOnboard, openProfile }) {
+export default function Balls({ me, promptSignIn, goOnboard, openProfile, jumpBall, onJumped }) {
   const [bview, setBview] = useState("list");
   const [balls, setBalls] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -75,6 +75,8 @@ export default function Balls({ me, promptSignIn, goOnboard, openProfile }) {
     const { data: r } = await supabase.from("ball_results_feed").select("*").eq("ball_id", id);
     const map = {}; (r || []).forEach((x) => (map[x.category_id] = x)); setResults(map);
   }, []);
+
+  useEffect(() => { if (jumpBall) { openBall(jumpBall); onJumped && onJumped(); } }, [jumpBall, openBall, onJumped]);
 
   const loadStandings = useCallback(async () => {
     setStandings(null);
