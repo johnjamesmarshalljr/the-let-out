@@ -17,6 +17,16 @@ const CATEGORY_TYPES = [
 ];
 const TYPE_LABEL = Object.fromEntries(CATEGORY_TYPES);
 
+// preset ballroom categories (name -> type) so organizers pick instead of typing
+const CATEGORY_PRESETS = [
+  ["Runway (European)", "runway"], ["Runway (American)", "runway"], ["All-American Runway", "runway"],
+  ["Vogue Fem", "voguing"], ["Old Way", "voguing"], ["New Way", "voguing"], ["Dramatics", "voguing"],
+  ["Performance", "performance"], ["Lip Sync", "performance"], ["Hand Performance", "performance"], ["Tag Team", "performance"],
+  ["Face", "face"], ["Body", "other"], ["Sex Siren", "other"], ["Bizarre", "other"],
+  ["Realness", "realness"], ["Executive Realness", "realness"], ["Realness with a Twist", "realness"], ["Thug Realness", "realness"], ["Femme Queen Realness", "realness"], ["Schoolboy/Schoolgirl Realness", "realness"],
+  ["Best Dressed", "fashion"], ["Designer's Delight", "fashion"], ["Labels", "fashion"], ["Fashion Killa", "fashion"],
+];
+
 const inputStyle = { background: C.ink, border: `1px solid ${C.border}`, borderRadius: 10, color: C.text, padding: "10px 12px", width: "100%", outline: "none", fontSize: 14 };
 const label = { display: "block", textTransform: "uppercase", fontWeight: 700, marginBottom: 6, fontSize: 10, letterSpacing: "0.16em", color: C.mutedDim };
 
@@ -44,6 +54,7 @@ export default function Balls({ me, promptSignIn, goOnboard, openProfile, jumpBa
   const [editing, setEditing] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [newCat, setNewCat] = useState({ name: "", category_type: "performance", prize: "" });
+  const [customCat, setCustomCat] = useState(false);
   const [results, setResults] = useState({});        // keyed by category_id
   const [editResult, setEditResult] = useState(null); // { categoryId, name, house }
   const [tab, setTab] = useState("balls");            // 'balls' | 'standings'
@@ -158,7 +169,7 @@ export default function Balls({ me, promptSignIn, goOnboard, openProfile, jumpBa
     setBusy(true);
     const pos = cats.length ? Math.max(...cats.map((c) => c.position)) + 1 : 0;
     const { error } = await supabase.from("ball_categories").insert({ ball_id: ball.id, name: newCat.name.trim(), category_type: newCat.category_type, prize: newCat.prize.trim() || null, position: pos });
-    if (!error) { setNewCat({ name: "", category_type: "performance", prize: "" }); openBall(ball.id); }
+    if (!error) { setNewCat({ name: "", category_type: "performance", prize: "" }); setCustomCat(false); openBall(ball.id); }
     setBusy(false);
   };
   const removeCategory = async (id) => {
@@ -362,11 +373,26 @@ export default function Balls({ me, promptSignIn, goOnboard, openProfile, jumpBa
         <>
           <div style={{ background: C.panel, border: `1px dashed ${C.border}`, borderRadius: 12, padding: 14, marginTop: 8 }}>
             <div style={{ fontWeight: 700, fontSize: 13, color: C.text, marginBottom: 10 }}>Add a category</div>
-            <input value={newCat.name} onChange={(e) => setNewCat({ ...newCat, name: e.target.value })} placeholder="Category name" style={{ ...inputStyle, marginBottom: 10 }} />
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-              <select value={newCat.category_type} onChange={(e) => setNewCat({ ...newCat, category_type: e.target.value })} style={{ ...inputStyle, flex: 1, minWidth: 130 }}>{CATEGORY_TYPES.map(([v, l]) => <option key={v} value={v} style={{ background: C.ink }}>{l}</option>)}</select>
-              <input value={newCat.prize} onChange={(e) => setNewCat({ ...newCat, prize: e.target.value })} placeholder="Prize (optional)" style={{ ...inputStyle, flex: 1, minWidth: 130 }} />
-            </div>
+            <select
+              value={customCat ? "__custom__" : newCat.name}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v === "__custom__") { setCustomCat(true); setNewCat({ ...newCat, name: "" }); }
+                else { const preset = CATEGORY_PRESETS.find((p) => p[0] === v); setCustomCat(false); setNewCat({ ...newCat, name: v, category_type: preset ? preset[1] : newCat.category_type }); }
+              }}
+              style={{ ...inputStyle, marginBottom: 10 }}
+            >
+              <option value="" style={{ background: C.ink }}>Pick a category…</option>
+              {CATEGORY_PRESETS.map(([name]) => <option key={name} value={name} style={{ background: C.ink }}>{name}</option>)}
+              <option value="__custom__" style={{ background: C.ink }}>+ Custom category…</option>
+            </select>
+            {customCat && (
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+                <input value={newCat.name} onChange={(e) => setNewCat({ ...newCat, name: e.target.value })} placeholder="Category name" style={{ ...inputStyle, flex: 2, minWidth: 150 }} autoFocus />
+                <select value={newCat.category_type} onChange={(e) => setNewCat({ ...newCat, category_type: e.target.value })} style={{ ...inputStyle, flex: 1, minWidth: 120 }}>{CATEGORY_TYPES.map(([v, l]) => <option key={v} value={v} style={{ background: C.ink }}>{l}</option>)}</select>
+              </div>
+            )}
+            <input value={newCat.prize} onChange={(e) => setNewCat({ ...newCat, prize: e.target.value })} placeholder="Prize (optional)" style={{ ...inputStyle }} />
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
               <button onClick={addCategory} disabled={busy || !newCat.name.trim()} style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 700, fontSize: 13, background: `linear-gradient(135deg, ${C.magenta}, ${C.violet})`, color: C.ink, border: "none", borderRadius: 999, padding: "8px 16px", cursor: "pointer", opacity: busy || !newCat.name.trim() ? 0.6 : 1 }}><Plus size={15} strokeWidth={2.6} /> Add to lineup</button>
             </div>

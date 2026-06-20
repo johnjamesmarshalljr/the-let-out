@@ -20,10 +20,8 @@ const SUGGESTED_TAGS = ["runway", "vogue", "performance", "realness", "face", "b
 //  Any PUBLIC SoundCloud URL works (a "set" = a playlist is ideal for a station).
 //  This is the ONLY line you change to set what the radio plays.
 // ============================================================
-const RADIO_URL = "https://soundcloud.com/jjgabbana/sets/y2k-the-remix-nyc?si=766b7d1d77c440ada214a26457988ee5&utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing";
+const RADIO_URL = "https://soundcloud.com/jjgabbana/sets/y2k-the-remix-nyc?si=be9d2b7f15d7432b958f1393e3fd99ed&utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing";
 const RADIO_LABEL = "THE LET OUT RADIO";
-// Y2K chrome accent (light enough that dark text on top stays legible)
-const CHROME = "linear-gradient(160deg, #f6f3fb 0%, #d2cddb 26%, #9d96af 50%, #efeaf7 72%, #bcb5ca 100%)";
 const AVATAR_COLORS = ["#ff3d7f", "#a87bff", "#e8c66b", "#5fd6e0", "#5fe0a0", "#ff8a5f"];
 const USERNAME_RE = /^[a-zA-Z0-9_.]{3,20}$/;
 const MAX_MEDIA_MB = 50;
@@ -194,34 +192,6 @@ function ProfileForm({ mode, me, initial, onSaved, onCancel }) {
       {err && <div style={{ color: C.magenta, fontSize: 13, marginBottom: 14 }}>{err}</div>}
       <button onClick={save} disabled={saving || uploading} style={{ fontWeight: 700, background: `linear-gradient(135deg, ${C.magenta}, ${C.violet})`, color: C.ink, borderRadius: 999, padding: "11px 26px", fontSize: 14, border: "none", cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.6 : 1 }}>{saving ? "Saving…" : mode === "edit" ? "Save changes" : "Enter the Let Out"}</button>
     </div>
-  );
-}
-
-function ChromeDaisy({ size = 72 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 100 100" aria-hidden="true" style={{ display: "block", filter: "drop-shadow(0 4px 10px rgba(0,0,0,0.45))" }}>
-      <defs>
-        <linearGradient id="chromePetal" x1="0.15" y1="0" x2="0.5" y2="1">
-          <stop offset="0%" stopColor="#ffffff" />
-          <stop offset="22%" stopColor="#dcd8e6" />
-          <stop offset="46%" stopColor="#8d86a0" />
-          <stop offset="62%" stopColor="#5b5470" />
-          <stop offset="80%" stopColor="#d2ccdd" />
-          <stop offset="100%" stopColor="#f4f0fa" />
-        </linearGradient>
-        <radialGradient id="chromeCenter" cx="0.38" cy="0.32" r="0.85">
-          <stop offset="0%" stopColor="#ffffff" />
-          <stop offset="42%" stopColor="#cbc6d8" />
-          <stop offset="76%" stopColor="#6f6786" />
-          <stop offset="100%" stopColor="#3a3450" />
-        </radialGradient>
-      </defs>
-      {Array.from({ length: 8 }).map((_, i) => (
-        <ellipse key={i} cx="50" cy="25" rx="11" ry="20" fill="url(#chromePetal)" stroke="#2b2540" strokeWidth="0.7" transform={`rotate(${i * 45} 50 50)`} />
-      ))}
-      <circle cx="50" cy="50" r="14" fill="url(#chromeCenter)" stroke="#2b2540" strokeWidth="0.7" />
-      <ellipse cx="45" cy="45" rx="4.2" ry="2.6" fill="#ffffff" opacity="0.7" />
-    </svg>
   );
 }
 
@@ -433,6 +403,44 @@ function GlobalCalendar({ me, onOpenBall, promptSignIn, goOnboard }) {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+function Welcome({ onWalkIn }) {
+  const [next, setNext] = useState(null);
+  const [stats, setStats] = useState(null);
+  useEffect(() => {
+    (async () => {
+      const today = new Date().toISOString().slice(0, 10);
+      const { data: nb } = await supabase.from("balls_directory").select("name,ball_date,location").gte("ball_date", today).order("ball_date", { ascending: true }).limit(1);
+      setNext((nb && nb[0]) || null);
+      const [{ count: hc }, { count: bc }] = await Promise.all([
+        supabase.from("houses").select("id", { count: "exact", head: true }),
+        supabase.from("balls").select("id", { count: "exact", head: true }),
+      ]);
+      setStats({ houses: hc || 0, balls: bc || 0 });
+    })();
+  }, []);
+  const fmt = (d) => { try { return new Date(d + "T00:00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }); } catch { return d; } };
+  return (
+    <div style={{ background: `linear-gradient(150deg, ${C.panel2}, ${C.panel})`, border: `1px solid ${C.borderHot}`, borderRadius: 18, padding: 22, marginBottom: 18 }}>
+      <div style={{ fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.16em", fontSize: 24, lineHeight: 1.05 }}>The Let Out</div>
+      <div style={{ color: C.magenta, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.2em", fontSize: 10.5, marginTop: 6 }}>the scene, owned by us</div>
+      <p style={{ color: C.text, fontSize: 14.5, lineHeight: 1.6, margin: "14px 0 0", maxWidth: 470 }}>The home for ballroom — balls and their results, your house's chat and calendar, every function across the scene in one place, and the radio always on. Built for us, off Facebook.</p>
+      {next && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, background: C.ink, border: `1px solid ${C.border}`, borderRadius: 12, padding: "10px 14px", marginTop: 16 }}>
+          <Calendar size={16} style={{ color: C.gold, flexShrink: 0 }} />
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontSize: 10.5, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: C.mutedDim }}>Next ball</div>
+            <div style={{ fontWeight: 700, fontSize: 14, color: C.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{next.name} · {fmt(next.ball_date)}{next.location ? " · " + next.location : ""}</div>
+          </div>
+        </div>
+      )}
+      <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 18, flexWrap: "wrap" }}>
+        <button onClick={onWalkIn} style={{ fontWeight: 800, fontSize: 14.5, background: `linear-gradient(135deg, ${C.magenta}, ${C.violet})`, color: C.ink, border: "none", borderRadius: 999, padding: "11px 26px", cursor: "pointer" }}>Walk in</button>
+        {stats && <div style={{ color: C.muted, fontSize: 12.5 }}>{stats.houses} {stats.houses === 1 ? "house" : "houses"} · {stats.balls} {stats.balls === 1 ? "ball" : "balls"}</div>}
+      </div>
     </div>
   );
 }
@@ -697,7 +705,7 @@ export default function Forum() {
             : view === "edit" && me ? <ProfileForm mode="edit" me={me} initial={me} onSaved={(u) => { onProfileSaved(u); openProfile(u.username); }} onCancel={() => me.username && openProfile(me.username)} />
             : (
               <>
-                {view === "feed" && <Feed visible={visible} sort={sort} setSort={setSort} query={query} setQuery={setQuery} tagFilter={tagFilter} setTagFilter={setTagFilter} votes={votes} applyVote={applyVote} openPost={openPost} openProfile={openProfile} onTag={filterByTag} />}
+                {view === "feed" && <>{!me && <Welcome onWalkIn={() => setShowSignIn(true)} />}<Feed visible={visible} sort={sort} setSort={setSort} query={query} setQuery={setQuery} tagFilter={tagFilter} setTagFilter={setTagFilter} votes={votes} applyVote={applyVote} openPost={openPost} openProfile={openProfile} onTag={filterByTag} /></>}
                 {view === "houses" && <Houses me={me} promptSignIn={() => setShowSignIn(true)} goOnboard={() => setView("onboarding")} openProfile={openProfile} />}
                 {view === "balls" && <Balls me={me} promptSignIn={() => setShowSignIn(true)} goOnboard={() => setView("onboarding")} openProfile={openProfile} jumpBall={jumpBall} onJumped={() => setJumpBall(null)} />}
                 {view === "calendar" && <GlobalCalendar me={me} onOpenBall={(id) => { setJumpBall(id); setView("balls"); }} promptSignIn={() => setShowSignIn(true)} goOnboard={() => setView("onboarding")} />}
@@ -715,21 +723,20 @@ export default function Forum() {
       {showSignIn && (
         <div style={{ position: "fixed", inset: 0, zIndex: 30, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, background: "rgba(8,6,14,0.7)" }} onClick={() => { setShowSignIn(false); setLinkSent(false); setAuthError(null); }}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: C.panel, border: `1px solid ${C.borderHot}`, borderRadius: 18, padding: 24, width: 380, maxWidth: "100%" }}>
-            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 2 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+              <span style={{ fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.14em", fontSize: 16 }}>Walk in</span>
               <button onClick={() => { setShowSignIn(false); setLinkSent(false); setAuthError(null); }} style={{ color: C.muted, background: "none", border: "none", cursor: "pointer" }}><X size={18} /></button>
             </div>
-            <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}><ChromeDaisy size={72} /></div>
-            <div style={{ textAlign: "center", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.18em", fontSize: 22, marginBottom: 16 }}>Walk in</div>
             {linkSent ? <p style={{ color: C.text, fontSize: 14, lineHeight: 1.6, marginTop: 14 }}>Check <strong>{email}</strong> for a sign-in link. Open it on this device and you're back in — same account, whether you're new or returning.</p>
               : (
                 <>
                   <div style={{ textTransform: "uppercase", fontWeight: 700, fontSize: 10, letterSpacing: "0.16em", color: C.mutedDim, margin: "8px 0 10px" }}>Sign in or back in</div>
-                  <button onClick={signInGoogle} style={{ width: "100%", fontWeight: 700, marginBottom: 12, background: "#fff", color: "#1a1a1a", borderRadius: 999, padding: 12, border: "none", cursor: "pointer", fontSize: 14 }}>Continue with Google</button>
-                  <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@email.com" style={{ ...inputStyle, borderRadius: 999, marginBottom: 10 }} />
-                  <button onClick={sendMagicLink} style={{ width: "100%", fontWeight: 700, background: C.panel2, color: C.text, border: `1px solid ${C.border}`, borderRadius: 999, padding: 12, cursor: "pointer", fontSize: 14 }}>Email me a sign-in link</button>
+                  <button onClick={signInGoogle} style={{ width: "100%", fontWeight: 700, marginBottom: 12, background: "#fff", color: "#1a1a1a", borderRadius: 10, padding: 11, border: "none", cursor: "pointer", fontSize: 14 }}>Continue with Google</button>
+                  <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@email.com" style={{ ...inputStyle, marginBottom: 10 }} />
+                  <button onClick={sendMagicLink} style={{ width: "100%", fontWeight: 700, background: C.panel2, color: C.text, border: `1px solid ${C.border}`, borderRadius: 10, padding: 11, cursor: "pointer", fontSize: 14 }}>Email me a sign-in link</button>
                   <p style={{ color: C.mutedDim, fontSize: 11.5, lineHeight: 1.5, margin: "10px 0 0" }}>Use the same Google or email as before and you'll land right back in your account — no password, on any device.</p>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "18px 0 14px", color: C.mutedDim, fontSize: 11 }}><div style={{ height: 1, background: C.border, flex: 1 }} /> NEW HERE? <div style={{ height: 1, background: C.border, flex: 1 }} /></div>
-                  <button onClick={createProfile} style={{ width: "100%", fontWeight: 800, marginBottom: 8, background: CHROME, color: "#161018", borderRadius: 999, padding: 13, border: "none", cursor: "pointer", fontSize: 14.5, boxShadow: "0 2px 14px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.55)" }}>Create a name-only profile</button>
+                  <button onClick={createProfile} style={{ width: "100%", fontWeight: 800, marginBottom: 8, background: `linear-gradient(135deg, ${C.magenta}, ${C.violet})`, color: C.ink, borderRadius: 10, padding: 12, border: "none", cursor: "pointer", fontSize: 14.5 }}>Create a name-only profile</button>
                   <p style={{ color: C.mutedDim, fontSize: 11.5, lineHeight: 1.5, margin: 0 }}>Fastest way in — no email needed. But a name-only profile lives only in this browser and can't be recovered if it's cleared or you switch devices. Add Google or email anytime to lock it in.</p>
                   {authError && <div style={{ color: C.magenta, fontSize: 12.5, marginTop: 14, lineHeight: 1.5 }}>{authError}</div>}
                 </>
