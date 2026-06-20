@@ -20,7 +20,7 @@ const SUGGESTED_TAGS = ["runway", "vogue", "performance", "realness", "face", "b
 //  Any PUBLIC SoundCloud URL works (a "set" = a playlist is ideal for a station).
 //  This is the ONLY line you change to set what the radio plays.
 // ============================================================
-const RADIO_URL = "https://soundcloud.com/jjgabbana/sets/y2k-the-remix-nyc?si=b9bc3976dedf4bf28b91f60e23d4e3fb&utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing";
+const RADIO_URL = "https://soundcloud.com/jjgabbana/sets/y2k-the-remix-nyc?si=766b7d1d77c440ada214a26457988ee5&utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing";
 const RADIO_LABEL = "THE LET OUT RADIO";
 // Y2K chrome accent (light enough that dark text on top stays legible)
 const CHROME = "linear-gradient(160deg, #f6f3fb 0%, #d2cddb 26%, #9d96af 50%, #efeaf7 72%, #bcb5ca 100%)";
@@ -194,6 +194,34 @@ function ProfileForm({ mode, me, initial, onSaved, onCancel }) {
       {err && <div style={{ color: C.magenta, fontSize: 13, marginBottom: 14 }}>{err}</div>}
       <button onClick={save} disabled={saving || uploading} style={{ fontWeight: 700, background: `linear-gradient(135deg, ${C.magenta}, ${C.violet})`, color: C.ink, borderRadius: 999, padding: "11px 26px", fontSize: 14, border: "none", cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.6 : 1 }}>{saving ? "Saving…" : mode === "edit" ? "Save changes" : "Enter the Let Out"}</button>
     </div>
+  );
+}
+
+function ChromeDaisy({ size = 72 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 100 100" aria-hidden="true" style={{ display: "block", filter: "drop-shadow(0 4px 10px rgba(0,0,0,0.45))" }}>
+      <defs>
+        <linearGradient id="chromePetal" x1="0.15" y1="0" x2="0.5" y2="1">
+          <stop offset="0%" stopColor="#ffffff" />
+          <stop offset="22%" stopColor="#dcd8e6" />
+          <stop offset="46%" stopColor="#8d86a0" />
+          <stop offset="62%" stopColor="#5b5470" />
+          <stop offset="80%" stopColor="#d2ccdd" />
+          <stop offset="100%" stopColor="#f4f0fa" />
+        </linearGradient>
+        <radialGradient id="chromeCenter" cx="0.38" cy="0.32" r="0.85">
+          <stop offset="0%" stopColor="#ffffff" />
+          <stop offset="42%" stopColor="#cbc6d8" />
+          <stop offset="76%" stopColor="#6f6786" />
+          <stop offset="100%" stopColor="#3a3450" />
+        </radialGradient>
+      </defs>
+      {Array.from({ length: 8 }).map((_, i) => (
+        <ellipse key={i} cx="50" cy="25" rx="11" ry="20" fill="url(#chromePetal)" stroke="#2b2540" strokeWidth="0.7" transform={`rotate(${i * 45} 50 50)`} />
+      ))}
+      <circle cx="50" cy="50" r="14" fill="url(#chromeCenter)" stroke="#2b2540" strokeWidth="0.7" />
+      <ellipse cx="45" cy="45" rx="4.2" ry="2.6" fill="#ffffff" opacity="0.7" />
+    </svg>
   );
 }
 
@@ -687,10 +715,11 @@ export default function Forum() {
       {showSignIn && (
         <div style={{ position: "fixed", inset: 0, zIndex: 30, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, background: "rgba(8,6,14,0.7)" }} onClick={() => { setShowSignIn(false); setLinkSent(false); setAuthError(null); }}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: C.panel, border: `1px solid ${C.borderHot}`, borderRadius: 18, padding: 24, width: 380, maxWidth: "100%" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-              <span style={{ fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.18em", fontSize: 22 }}>Walk in</span>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 2 }}>
               <button onClick={() => { setShowSignIn(false); setLinkSent(false); setAuthError(null); }} style={{ color: C.muted, background: "none", border: "none", cursor: "pointer" }}><X size={18} /></button>
             </div>
+            <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}><ChromeDaisy size={72} /></div>
+            <div style={{ textAlign: "center", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.18em", fontSize: 22, marginBottom: 16 }}>Walk in</div>
             {linkSent ? <p style={{ color: C.text, fontSize: 14, lineHeight: 1.6, marginTop: 14 }}>Check <strong>{email}</strong> for a sign-in link. Open it on this device and you're back in — same account, whether you're new or returning.</p>
               : (
                 <>
